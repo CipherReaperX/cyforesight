@@ -64,6 +64,16 @@ export class DashboardController {
     }
   }
 
+  async getGeoThreats(req: AuthRequest, res: Response) {
+    try {
+      const { refresh } = req.query;
+      const data = await dashboardService.getGeoThreats(refresh === 'true');
+      sendSuccess(res, data);
+    } catch (error: any) {
+      sendError(res, error.message);
+    }
+  }
+
   async invalidateCache(req: AuthRequest, res: Response) {
     try {
       await dashboardService.invalidateCache();

@@ -79,6 +79,18 @@ export function useFeedHealth() {
   })
 }
 
+export function useGeoThreats() {
+  return useQuery<any[]>({
+    queryKey: ['dashboard', 'geo-threats'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/dashboard/geo-threats')
+      return data.data ?? []
+    },
+    staleTime: 300000,
+    refetchInterval: 300000,
+  })
+}
+
 export function useRealtimePulse(): { pulse: any; status: SSEStatus } {
   const [pulse, setPulse] = useState<any>(null)
   const [status, setStatus] = useState<SSEStatus>('connecting')

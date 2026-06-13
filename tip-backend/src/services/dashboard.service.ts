@@ -4,6 +4,23 @@ import { iocs, threatDetections, assets, threatFeeds, mitreTechniques } from '..
 import { cacheGet, cacheSet, cacheDelPattern } from '../utils/cache';
 import { subDays } from 'date-fns';
 import { extractThreatActorsFromIOC } from '../utils/threat-intel';
+import * as geoip from 'geoip-lite';
+
+const COUNTRY_NAMES: Record<string, string> = {
+  US:'United States',CN:'China',RU:'Russia',DE:'Germany',NL:'Netherlands',
+  GB:'United Kingdom',FR:'France',JP:'Japan',KR:'South Korea',BR:'Brazil',
+  IN:'India',CA:'Canada',AU:'Australia',SG:'Singapore',HK:'Hong Kong',
+  UA:'Ukraine',PL:'Poland',SE:'Sweden',IT:'Italy',ES:'Spain',
+  TR:'Turkey',IR:'Iran',KP:'North Korea',RO:'Romania',BG:'Bulgaria',
+  CZ:'Czech Republic',HU:'Hungary',AT:'Austria',CH:'Switzerland',BE:'Belgium',
+  PT:'Portugal',GR:'Greece',FI:'Finland',NO:'Norway',DK:'Denmark',
+  ID:'Indonesia',MY:'Malaysia',TH:'Thailand',VN:'Vietnam',PH:'Philippines',
+  ZA:'South Africa',EG:'Egypt',NG:'Nigeria',AR:'Argentina',MX:'Mexico',
+  CL:'Chile',CO:'Colombia',PK:'Pakistan',BD:'Bangladesh',LT:'Lithuania',
+  LV:'Latvia',EE:'Estonia',BY:'Belarus',MD:'Moldova',RS:'Serbia',
+  BA:'Bosnia','ME':'Montenegro',MK:'North Macedonia',AL:'Albania',
+  XK:'Kosovo',HR:'Croatia',SI:'Slovenia',SK:'Slovakia',
+};
 
 export class DashboardService {
   // Bust all dashboard cache keys
@@ -299,6 +316,54 @@ export class DashboardService {
 
   async getActivityTimeline(hours: number = 24) {
     return [];
+  }
+
+  async getGeoThreats(refresh = false) {
+    const cacheKey = 'dashboard:geo-threats';
+    if (!refresh) {
+      const cached = await cacheGet(cacheKey);
+      if (cached) return cached;
+    }
+
+    // Pull up to 2000 most-recent IP IOCs
+    const ipIOCs = await db
+      .select({ value: iocs.value, severity: iocs.severity, lastSeen: iocs.lastSeen })
+      .from(iocs)
+      .where(eq(iocs.type, 'ip'))
+      .orderBy(desc(iocs.lastSeen))
+      .limit(2000);
+
+    type Entry = {
+      country: string; countryCode: string; lat: number; lng: number;
+      count: number; critical: number; high: number; medium: number; low: number;
+      latestSeen: string; sampleIPs: string[];
+    };
+    const map = new Map<string, Entry>();
+
+    for (const ioc of ipIOCs) {
+      const geo = geoip.lookup(ioc.value);
+      if (!geo || !geo.country || !geo.ll || geo.ll[0] === 0) continue;
+      const cc = geo.country;
+      const entry = map.get(cc) ?? {
+        country: COUNTRY_NAMES[cc] || cc,
+        countryCode: cc,
+        lat: geo.ll[0],
+        lng: geo.ll[1],
+        count: 0, critical: 0, high: 0, medium: 0, low: 0,
+        latestSeen: ioc.lastSeen.toISOString(),
+        sampleIPs: [],
+      };
+      entry.count++;
+      const sev = ioc.severity as keyof Pick<Entry, 'critical'|'high'|'medium'|'low'>;
+      if (sev in { critical:1, high:1, medium:1, low:1 }) entry[sev]++;
+      if (new Date(ioc.lastSeen) > new Date(entry.latestSeen)) entry.latestSeen = ioc.lastSeen.toISOString();
+      if (entry.sampleIPs.length < 5) entry.sampleIPs.push(ioc.value);
+      map.set(cc, entry);
+    }
+
+    const result = Array.from(map.values()).sort((a, b) => b.count - a.count);
+    await cacheSet(cacheKey, result, 300);
+    return result;
   }
 
   async getRealtimePulse() {
