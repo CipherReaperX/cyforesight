@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { AlertTriangle, Shield, ShieldCheck, Database, TrendingUp, TrendingDown } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -26,7 +26,7 @@ function mapSeverity(severity: string): BadgeVariant {
 export default function Dashboard() {
   const [severityFilter, setSeverityFilter] = useState<string>('')
   const { data: overview, isLoading: statsLoading } = useDashboardOverview(30, 10)
-  const pulse = useRealtimePulse()
+  const { pulse } = useRealtimePulse()
   const stats = overview?.stats
   const trendData = overview?.threatTrend || []
   const distribution = overview?.iocDistribution || []
@@ -37,10 +37,13 @@ export default function Dashboard() {
     ? allRecentThreats.filter((t: any) => t.severity === severityFilter)
     : allRecentThreats
   const feeds = overview?.feedHealth || []
-  const pressureData = trendData.map((t) => ({
-    date: t.date,
-    pressure: (t.critical || 0) * 4 + (t.high || 0) * 3 + (t.medium || 0) * 2 + (t.low || 0),
-  }))
+  const pressureData = useMemo(
+    () => trendData.map((t) => ({
+      date: t.date,
+      pressure: (t.critical || 0) * 4 + (t.high || 0) * 3 + (t.medium || 0) * 2 + (t.low || 0),
+    })),
+    [trendData]
+  )
 
   if (statsLoading) {
     return <div className="text-slate-400">Loading...</div>

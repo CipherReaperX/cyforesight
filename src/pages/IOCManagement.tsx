@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Search, Plus, Download, Upload, Eye, MoreVertical, Copy, RefreshCw } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
@@ -16,6 +16,7 @@ import { useIOCDistribution } from '@/hooks/useDashboard'
 type BadgeVariant = 'default' | 'critical' | 'high' | 'medium' | 'low' | 'info' | 'success' | 'warning' | 'danger'
 
 export default function IOCManagement() {
+  const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState({
     skip: 0,
@@ -24,6 +25,12 @@ export default function IOCManagement() {
     severity: '',
     status: '',
   })
+
+  // Debounce search input by 350ms
+  useEffect(() => {
+    const id = setTimeout(() => setSearch(searchInput), 350)
+    return () => clearTimeout(id)
+  }, [searchInput])
   const [csvFile, setCsvFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
 
@@ -170,8 +177,8 @@ export default function IOCManagement() {
               <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
               <Input
                 placeholder="Search IOCs by value, tag, source..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 className="pl-10"
               />
             </div>

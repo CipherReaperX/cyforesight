@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import apiClient from '@/lib/api'
 import { DashboardStats, ThreatTrend, IOCDistribution, MitreTechnique, ThreatDetection, FeedHealth, DashboardOverview } from '@/types'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+
+export type SSEStatus = 'connecting' | 'connected' | 'disconnected'
 
 export function useDashboardOverview(days: number = 30, limit: number = 10) {
   return useQuery<DashboardOverview>({
@@ -77,33 +79,66 @@ export function useFeedHealth() {
   })
 }
 
-export function useRealtimePulse() {
+export function useRealtimePulse(): { pulse: any; status: SSEStatus } {
   const [pulse, setPulse] = useState<any>(null)
+  const [status, setStatus] = useState<SSEStatus>('connecting')
+  const esRef = useRef<EventSource | null>(null)
+  const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const retryDelayRef = useRef(1000)
+  const unmountedRef = useRef(false)
 
-  useEffect(() => {
+  const connect = useCallback(() => {
+    if (unmountedRef.current) return
     const token = localStorage.getItem('token')
-    if (!token) return
+    if (!token) { setStatus('disconnected'); return }
 
+    setStatus('connecting')
     const baseUrl = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
-    const streamUrl = baseUrl.startsWith('http')
-      ? `${baseUrl}/dashboard/stream`
-      : `/api/dashboard/stream`
-    const es = new EventSource(`${streamUrl}?token=${encodeURIComponent(token)}`)
+    const url = baseUrl.startsWith('http') ? `${baseUrl}/dashboard/stream` : `/api/dashboard/stream`
+    const es = new EventSource(`${url}?token=${encodeURIComponent(token)}`)
+    esRef.current = es
 
-    const onPulse = (evt: MessageEvent) => {
+    es.addEventListener('pulse', (evt: MessageEvent) => {
       try {
-        setPulse(JSON.parse(evt.data))
-      } catch {
-        // ignore malformed events
-      }
-    }
+        if (!unmountedRef.current) {
+          setPulse(JSON.parse(evt.data))
+          setStatus('connected')
+          retryDelayRef.current = 1000
+        }
+      } catch { /* ignore malformed events */ }
+    })
 
-    es.addEventListener('pulse', onPulse as EventListener)
-    return () => {
-      es.removeEventListener('pulse', onPulse as EventListener)
+    es.onerror = () => {
+      if (unmountedRef.current) return
       es.close()
+      setStatus('disconnected')
+      const delay = retryDelayRef.current
+      retryDelayRef.current = Math.min(delay * 2, 30000)
+      retryRef.current = setTimeout(connect, delay)
     }
   }, [])
 
-  return pulse
+  useEffect(() => {
+    unmountedRef.current = false
+    connect()
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && !unmountedRef.current) {
+        esRef.current?.close()
+        if (retryRef.current) clearTimeout(retryRef.current)
+        retryDelayRef.current = 1000
+        connect()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      unmountedRef.current = true
+      esRef.current?.close()
+      if (retryRef.current) clearTimeout(retryRef.current)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [connect])
+
+  return { pulse, status }
 }
