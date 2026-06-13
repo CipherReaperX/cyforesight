@@ -31,13 +31,13 @@ export function CardHeader({ children, className }: CardHeaderProps) {
   return <div className={cn('mb-4', className)}>{children}</div>
 }
 
-interface CardTitleProps {
+interface CardTitleProps extends React.HTMLAttributes<HTMLHeadingElement> {
   children: React.ReactNode
   className?: string
 }
 
-export function CardTitle({ children, className }: CardTitleProps) {
-  return <h3 className={cn('text-lg font-semibold text-slate-100', className)}>{children}</h3>
+export function CardTitle({ children, className, ...props }: CardTitleProps) {
+  return <h3 className={cn('text-lg font-semibold text-slate-100', className)} {...props}>{children}</h3>
 }
 
 interface CardContentProps {

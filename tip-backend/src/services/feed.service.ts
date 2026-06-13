@@ -65,12 +65,20 @@ export class FeedService {
       const response = await axios.get(feed.url, {
         timeout: requestTimeout,
         headers: { 'User-Agent': 'CyForesight/1.0' },
+        responseType: 'text',
+        maxContentLength: 10 * 1024 * 1024, // 10MB hard limit
+        decompress: true,
       });
+      // Slice very large feeds to avoid PapaParse stack overflow on 30MB+ CSVs
+      if (typeof response.data === 'string' && response.data.length > 3 * 1024 * 1024) {
+        const cutAt = response.data.lastIndexOf('\n', 3 * 1024 * 1024);
+        response.data = cutAt > 0 ? response.data.slice(0, cutAt) : response.data.slice(0, 3 * 1024 * 1024);
+      }
 
       const toInsert: Array<typeof iocs.$inferInsert> = [];
 
       if (feed.type === 'json') {
-        const data = response.data;
+        const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
         const indicators: any[] = Array.isArray(data)
           ? data
           : data?.results || data?.indicators || data?.data || [];
@@ -96,17 +104,32 @@ export class FeedService {
       }
 
       if (feed.type === 'csv') {
-        const parsed = Papa.parse(response.data, {
-          header: false,
-          skipEmptyLines: true,
-        });
+        // Line-split parser: avoids PapaParse recursion overflow on large feeds (URLhaus is 3MB+)
+        // Handles quoted fields by stripping surrounding quotes per cell.
+        const rawText = typeof response.data === 'string' ? response.data : '';
+        const lines = rawText.split('\n');
+        const MAX_ROWS_PER_SYNC = 5000;
+        let parsedRowCount = 0;
 
-        for (const row of parsed.data as Array<string[]>) {
-          if (typeof row[0] === 'string' && row[0].startsWith('#')) continue;
-          const iocValue = row[0]?.toString().trim();
-          if (!iocValue) continue;
-          const iocType = this.detectIOCType(iocValue);
-          if (!iocType) continue;
+        for (const line of lines) {
+          if (parsedRowCount >= MAX_ROWS_PER_SYNC) break;
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+
+          // Split on comma, strip surrounding whitespace and quotes from each cell
+          const cells = trimmed.split(',').map((c) => c.trim().replace(/^"(.*)"$/, '$1').trim());
+
+          // Scan every cell — feeds vary in which column holds the IOC value
+          // (URLhaus: col 2 = url, MalwareBazaar: col 1 = sha256, Feodo: col 0 = ip)
+          let iocValue: string | null = null;
+          let iocType: ReturnType<typeof this.detectIOCType> | null = null;
+          for (const candidate of cells) {
+            if (!candidate || candidate.startsWith('#')) continue;
+            const t = this.detectIOCType(candidate);
+            if (t) { iocValue = candidate; iocType = t; break; }
+          }
+          if (!iocValue || !iocType) continue;
+          parsedRowCount++;
 
           toInsert.push({
             value: iocValue,
@@ -117,15 +140,20 @@ export class FeedService {
             firstSeen: now,
             lastSeen: now,
             tags: ['imported'],
-            description: row[1]?.toString().trim() || '',
+            description: '',
           });
         }
       }
 
       let inserted = 0;
       if (toInsert.length > 0) {
-        const result = await db.insert(iocs).values(toInsert).onConflictDoNothing().returning({ id: iocs.id });
-        inserted = result.length;
+        // Batch inserts to avoid Drizzle query-builder stack overflow on large arrays
+        const BATCH_SIZE = 500;
+        for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
+          const batch = toInsert.slice(i, i + BATCH_SIZE);
+          const result = await db.insert(iocs).values(batch).onConflictDoNothing().returning({ id: iocs.id });
+          inserted += result.length;
+        }
       }
 
       await this.upsertFeedHealth(feed.id, {

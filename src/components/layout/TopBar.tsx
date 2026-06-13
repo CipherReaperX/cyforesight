@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Bell, LogOut, RefreshCw, Wifi, WifiOff } from 'lucide-react'
+import { Bell, LogOut, Menu, RefreshCw, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useRealtimePulse } from '@/hooks/useDashboard'
 import { useQueryClient } from '@tanstack/react-query'
+import { useSidebar } from './MainLayout'
 
 function decodeJWTUser(): { username: string; role: string } | null {
   try {
@@ -24,6 +25,7 @@ const ROLE_COLORS: Record<string, string> = {
 export default function TopBar() {
   const { status } = useRealtimePulse()
   const queryClient = useQueryClient()
+  const { toggle } = useSidebar()
   const [user] = useState(decodeJWTUser)
   const [lastUpdate, setLastUpdate] = useState(new Date())
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -52,9 +54,17 @@ export default function TopBar() {
   const lastUpdateLabel = elapsed < 10 ? 'just now' : elapsed < 60 ? `${elapsed}s ago` : `${Math.floor(elapsed / 60)}m ago`
 
   return (
-    <div className="flex h-16 items-center justify-between border-b border-[#1f2d3d] bg-[#0f1724]/90 px-6 backdrop-blur">
-      <div className="flex items-center space-x-4">
-        <h1 className="text-lg font-semibold tracking-tight text-slate-100">CyForesight Console</h1>
+    <div className="flex h-16 items-center justify-between border-b border-[#1f2d3d] bg-[#0f1724]/90 px-4 backdrop-blur md:px-6">
+      <div className="flex items-center space-x-3">
+        {/* Hamburger — visible only on tablet/mobile */}
+        <button
+          onClick={toggle}
+          className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 lg:hidden"
+          aria-label="Toggle navigation"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <h1 className="text-base font-semibold tracking-tight text-slate-100 md:text-lg">CyForesight Console</h1>
 
         {/* SSE connection status */}
         <div className="flex items-center space-x-1.5">
@@ -88,14 +98,14 @@ export default function TopBar() {
         </div>
 
         {/* Refresh all queries */}
-        <Button variant="outline" size="sm" onClick={handleRefresh} title="Refresh all data">
+        <Button variant="outline" size="sm" onClick={handleRefresh} aria-label="Refresh all data">
           <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
         </Button>
 
         {/* Notifications bell */}
-        <Button variant="outline" size="sm" className="relative">
+        <Button variant="outline" size="sm" className="relative" aria-label="Notifications">
           <Bell className="h-5 w-5" />
-          <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" />
+          <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />
         </Button>
 
         {/* User info + logout */}
