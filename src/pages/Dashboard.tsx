@@ -1,15 +1,16 @@
-import { useState, useMemo, useCallback, lazy, Suspense } from 'react'
-import { AlertTriangle, Shield, ShieldCheck, Database, TrendingUp, TrendingDown, RefreshCw, Filter, Download, X, Globe, MapPin } from 'lucide-react'
+import { useState, useMemo, useCallback, lazy, Suspense, useEffect } from 'react'
+import { AlertTriangle, Shield, ShieldCheck, Database, TrendingUp, TrendingDown, RefreshCw, Filter, Download, X, Globe, MapPin, Zap } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Progress } from '@/components/ui/Progress'
 import { Button } from '@/components/ui/Button'
-import { useDashboardOverview, useRealtimePulse, useGeoThreats } from '@/hooks/useDashboard'
+import { useDashboardOverview, useGeoThreats } from '@/hooks/useDashboard'
 import { formatNumber, formatRelativeTime } from '@/lib/utils'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 import type { GeoCountry } from '@/components/GeoMap'
+import { useSocketCtx } from '@/providers/SocketProvider'
 import {
   LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, AreaChart, Area, BarChart, Bar,
@@ -69,8 +70,32 @@ export default function Dashboard() {
 
   const queryClient = useQueryClient()
   const { data: overview, isLoading, isFetching } = useDashboardOverview(dayRange, 10)
-  const { pulse } = useRealtimePulse()
   const { data: geoCountries = [], isLoading: geoLoading } = useGeoThreats()
+  const { socket } = useSocketCtx()
+
+  // Live pulse from Socket.IO (replaces SSE)
+  const [pulse, setPulse] = useState<any>(null)
+  const [socketStatus, setSocketStatus] = useState<'connecting'|'connected'|'disconnected'>('connecting')
+  const [lastIocFlash, setLastIocFlash] = useState(false)
+
+  useEffect(() => {
+    if (!socket) return
+    const onPulse  = (data: any) => setPulse(data)
+    const onIocNew = () => { setLastIocFlash(true); setTimeout(() => setLastIocFlash(false), 2000) }
+    const onConn   = () => setSocketStatus('connected')
+    const onDisc   = () => setSocketStatus('disconnected')
+    socket.on('dashboard:pulse', onPulse)
+    socket.on('ioc:new',         onIocNew)
+    socket.on('connect',         onConn)
+    socket.on('disconnect',      onDisc)
+    if (socket.connected) setSocketStatus('connected')
+    return () => {
+      socket.off('dashboard:pulse', onPulse)
+      socket.off('ioc:new',         onIocNew)
+      socket.off('connect',         onConn)
+      socket.off('disconnect',      onDisc)
+    }
+  }, [socket])
 
   const stats = overview?.stats
   const trendData = overview?.threatTrend || []
@@ -176,7 +201,30 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-100">Threat Dashboard</h1>
-          <p className="text-slate-400">Real-time threat overview · last {dayRange} days</p>
+          <div className="mt-1 flex items-center gap-3">
+            <p className="text-slate-400">Real-time threat overview · last {dayRange} days</p>
+            <span className="flex items-center gap-1.5 text-xs">
+              {socketStatus === 'connected' ? (
+                <>
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+                  </span>
+                  <span className="text-green-400 font-medium">LIVE</span>
+                </>
+              ) : socketStatus === 'connecting' ? (
+                <>
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-yellow-400" />
+                  <span className="text-yellow-400">CONNECTING</span>
+                </>
+              ) : (
+                <>
+                  <span className="h-2 w-2 rounded-full bg-red-500" />
+                  <span className="text-red-400">OFFLINE</span>
+                </>
+              )}
+            </span>
+          </div>
         </div>
         <div className="flex items-center space-x-2">
           <Button
@@ -236,7 +284,7 @@ export default function Dashboard() {
 
       {/* Realtime Pulse Strip */}
       {pulse && (
-        <Card>
+        <Card className={lastIocFlash ? 'border-cyan-400/60 transition-colors duration-500' : 'transition-colors duration-1000'}>
           <CardContent>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
               <div>
@@ -256,6 +304,12 @@ export default function Dashboard() {
                 <p className="text-xl font-bold text-violet-300">{formatNumber(pulse.incidentsOpen || 0)}</p>
               </div>
             </div>
+            {lastIocFlash && (
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-cyan-300 animate-in fade-in duration-200">
+                <Zap className="h-3 w-3" />
+                New IOCs just arrived
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

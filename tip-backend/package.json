@@ -46,6 +46,7 @@
     "node-cache": "^5.1.2",
     "papaparse": "^5.5.3",
     "postgres": "^3.4.3",
+    "socket.io": "^4.8.3",
     "whois": "^2.13.7",
     "winston": "^3.11.0",
     "xml2js": "^0.6.2",

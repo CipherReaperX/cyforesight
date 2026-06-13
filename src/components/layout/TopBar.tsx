@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Bell, LogOut, Menu, RefreshCw, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { useRealtimePulse } from '@/hooks/useDashboard'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSidebar } from './MainLayout'
+import { useSocket } from '@/hooks/useSocket'
+import api from '@/lib/api'
 
 function decodeJWTUser(): { username: string; role: string } | null {
   try {
@@ -23,7 +24,7 @@ const ROLE_COLORS: Record<string, string> = {
 }
 
 export default function TopBar() {
-  const { status } = useRealtimePulse()
+  const { status } = useSocket()
   const queryClient = useQueryClient()
   const { toggle } = useSidebar()
   const [user] = useState(decodeJWTUser)
@@ -31,7 +32,6 @@ export default function TopBar() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [tick, setTick] = useState(0)
 
-  // Tick every 30s so "last updated" label stays fresh
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 30000)
     return () => clearInterval(id)
@@ -39,6 +39,7 @@ export default function TopBar() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
+    try { await api.post('/dashboard/invalidate-cache') } catch { /* ignore */ }
     await queryClient.invalidateQueries()
     setLastUpdate(new Date())
     setTimeout(() => setIsRefreshing(false), 800)

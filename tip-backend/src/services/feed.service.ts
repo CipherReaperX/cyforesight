@@ -6,6 +6,7 @@ import { iocs, threatFeeds } from '../models/schema';
 import logger from '../config/logger';
 import { feedFetchQueue } from '../config/queue';
 import iocService from './ioc.service';
+import { emit } from './socket.service';
 
 export class FeedService {
   private detectIOCType(value: string): (typeof iocs.$inferInsert)['type'] | null {
@@ -163,6 +164,13 @@ export class FeedService {
       });
 
       logger.info(`Feed sync completed immediately: ${id} (${inserted} new IOCs)`);
+
+      // Broadcast real-time events to all connected dashboard clients
+      if (inserted > 0) {
+        emit('ioc:new', { feedId: id, feedName: feed.name, count: inserted });
+      }
+      emit('feed:synced', { feedId: id, feedName: feed.name, inserted, parsed: toInsert.length });
+
       return {
         mode: 'immediate',
         feedId: id,

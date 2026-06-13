@@ -1,0 +1,96 @@
+import { Server as HTTPServer } from 'http';
+import { Server as SocketIOServer, Socket } from 'socket.io';
+import jwt from 'jsonwebtoken';
+import logger from '../config/logger';
+import dashboardService from './dashboard.service';
+
+export type SocketEvent =
+  | 'dashboard:pulse'
+  | 'dashboard:refresh'
+  | 'ioc:new'
+  | 'feed:synced'
+  | 'feed:error';
+
+let io: SocketIOServer | null = null;
+let pulseTimer: ReturnType<typeof setInterval> | null = null;
+
+export function initSocketIO(httpServer: HTTPServer): SocketIOServer {
+  io = new SocketIOServer(httpServer, {
+    cors: {
+      origin: (process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:3001,http://localhost:4173')
+        .split(',').map(o => o.trim()),
+      credentials: true,
+    },
+    transports: ['websocket', 'polling'],
+    pingTimeout: 20000,
+    pingInterval: 25000,
+  });
+
+  // JWT auth middleware
+  io.use((socket: Socket, next) => {
+    const token =
+      (socket.handshake.auth as any)?.token ||
+      (socket.handshake.query?.token as string);
+
+    if (!token) return next(new Error('unauthorized: no token'));
+
+    try {
+      const payload = jwt.verify(token, process.env.JWT_SECRET || 'changeme');
+      (socket.data as any).user = payload;
+      next();
+    } catch {
+      next(new Error('unauthorized: invalid token'));
+    }
+  });
+
+  io.on('connection', (socket: Socket) => {
+    const user = (socket.data as any).user;
+    logger.info(`Socket connected: ${socket.id} (${user?.username || '?'})`);
+
+    socket.on('disconnect', (reason) => {
+      logger.info(`Socket disconnected: ${socket.id} — ${reason}`);
+    });
+
+    // Client can request an immediate pulse on connect
+    socket.on('pulse:request', async () => {
+      try {
+        const pulse = await dashboardService.getRealtimePulse();
+        socket.emit('dashboard:pulse', pulse);
+      } catch { /* ignore */ }
+    });
+  });
+
+  // Broadcast pulse every 5 seconds
+  pulseTimer = setInterval(async () => {
+    if (!io || io.engine.clientsCount === 0) return;
+    try {
+      const pulse = await dashboardService.getRealtimePulse();
+      io.emit('dashboard:pulse', pulse);
+    } catch { /* ignore */ }
+  }, 5000);
+
+  logger.info('Socket.IO server initialised');
+  return io;
+}
+
+/** Emit an event to all connected clients */
+export function emit(event: SocketEvent, payload: unknown): void {
+  if (!io) return;
+  io.emit(event, payload);
+}
+
+/** Emit to a specific socket (if you ever need per-user events) */
+export function emitTo(socketId: string, event: SocketEvent, payload: unknown): void {
+  if (!io) return;
+  io.to(socketId).emit(event, payload);
+}
+
+export function getIO(): SocketIOServer | null {
+  return io;
+}
+
+export function shutdownSocketIO(): void {
+  if (pulseTimer) { clearInterval(pulseTimer); pulseTimer = null; }
+  io?.close();
+  io = null;
+}

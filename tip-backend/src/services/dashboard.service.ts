@@ -5,6 +5,7 @@ import { cacheGet, cacheSet, cacheDelPattern } from '../utils/cache';
 import { subDays } from 'date-fns';
 import { extractThreatActorsFromIOC } from '../utils/threat-intel';
 import * as geoip from 'geoip-lite';
+import { emit } from './socket.service';
 
 const COUNTRY_NAMES: Record<string, string> = {
   US:'United States',CN:'China',RU:'Russia',DE:'Germany',NL:'Netherlands',
@@ -23,9 +24,10 @@ const COUNTRY_NAMES: Record<string, string> = {
 };
 
 export class DashboardService {
-  // Bust all dashboard cache keys
+  // Bust all dashboard cache keys and notify connected clients
   async invalidateCache() {
     await cacheDelPattern('dashboard:*');
+    emit('dashboard:refresh', { ts: new Date().toISOString() });
   }
 
   async getStats(refresh = false) {

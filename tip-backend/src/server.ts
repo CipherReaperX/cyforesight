@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import http from 'http';
 import { startScheduler } from './services/scheduler.service';
 import express from 'express';
 import cors from 'cors';
@@ -13,6 +14,7 @@ import { ensurePerformanceIndexes } from './config/indexes';
 import db from './config/database';
 import redis from './config/redis';
 import { sql } from 'drizzle-orm';
+import { initSocketIO, shutdownSocketIO } from './services/socket.service';
 
 const app = express();
 const PORT = process.env.PORT || 9999;
@@ -20,30 +22,21 @@ const PORT = process.env.PORT || 9999;
 // Security middleware
 app.use(helmet());
 
-// CORS setup with multiple allowed origins (ports 3000, 3001 and 4173)
+// CORS
 const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:3001,http://localhost:4173')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+  .split(',').map((o) => o.trim()).filter(Boolean);
+
 app.use(cors({
-  origin: function(origin, callback) {
-    if (!origin) return callback(null, true); // Allow non-browser requests like curl, postman
-
-    const isDevelopment = (process.env.NODE_ENV || 'development') !== 'production';
-    let isDevLocalOrigin = false;
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    const isDev = (process.env.NODE_ENV || 'development') !== 'production';
+    let isLocal = false;
     try {
-      const parsedOrigin = new URL(origin);
-      isDevLocalOrigin =
-        isDevelopment &&
-        (parsedOrigin.hostname === 'localhost' || parsedOrigin.hostname === '127.0.0.1');
-    } catch {
-      isDevLocalOrigin = false;
-    }
-
-    if (allowedOrigins.includes(origin) || isDevLocalOrigin) return callback(null, true);
-
-    const msg = `CORS policy does not allow access from origin ${origin}`;
-    return callback(new Error(msg), false);
+      const u = new URL(origin);
+      isLocal = isDev && (u.hostname === 'localhost' || u.hostname === '127.0.0.1');
+    } catch { /* ignore */ }
+    if (allowedOrigins.includes(origin) || isLocal) return callback(null, true);
+    return callback(new Error(`CORS policy blocks origin ${origin}`), false);
   },
   credentials: true,
 }));
@@ -52,7 +45,7 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Compression middleware — skip SSE streams (compression buffers chunked responses and breaks EventSource)
+// Compression — skip SSE streams
 app.use(compression({
   filter: (req, res) => {
     if (res.getHeader('Content-Type') === 'text/event-stream') return false;
@@ -61,78 +54,58 @@ app.use(compression({
   },
 }));
 
-// Logging HTTP requests
-app.use(morgan('combined', {
-  stream: { write: (message) => logger.info(message.trim()) }
-}));
+// HTTP request logging
+app.use(morgan('combined', { stream: { write: (msg) => logger.info(msg.trim()) } }));
 
-// Rate limiting on /api routes
+// Rate limiting
 app.use('/api', apiLimiter);
 
-// API Routes
+// API routes
 app.use('/api', routes);
 
-// Health check endpoint could optionally be here as well
-app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+// Health
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.get('/api/health/ready', async (req, res) => {
+app.get('/api/health/ready', async (_req, res) => {
   try {
     await db.execute(sql`SELECT 1`);
-    const redisReply = await redis.ping();
-    res.status(200).json({
-      status: 'ready',
-      checks: {
-        database: 'ok',
-        redis: redisReply === 'PONG' ? 'ok' : 'degraded',
-      },
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error: any) {
-    res.status(503).json({
-      status: 'not_ready',
-      message: error.message,
-      timestamp: new Date().toISOString(),
-    });
+    const pong = await redis.ping();
+    res.json({ status: 'ready', checks: { database: 'ok', redis: pong === 'PONG' ? 'ok' : 'degraded' }, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    res.status(503).json({ status: 'not_ready', message: err.message, timestamp: new Date().toISOString() });
   }
 });
 
-// 404 Not Found Handler for all other unknown endpoints
 app.use(notFoundHandler);
-
-// Global Error Handler
 app.use(errorHandler);
 
-// Start server
-app.listen(PORT, () => {
+// Create HTTP server and attach Socket.IO
+const httpServer = http.createServer(app);
+initSocketIO(httpServer);
+
+httpServer.listen(PORT, () => {
   console.log('╔════════════════════════════════════════════════════════╗');
   console.log('║  🛡️  CyForesight Backend Server Started                ║');
   console.log('╠════════════════════════════════════════════════════════╣');
   console.log(`║  📍 Server: http://localhost:${PORT}                   ║`);
-  console.log(`║  🔌 API: http://localhost:${PORT}/api                  ║`);
+  console.log(`║  🔌 API:    http://localhost:${PORT}/api               ║`);
+  console.log(`║  🔴 WS:     ws://localhost:${PORT} (Socket.IO)         ║`);
   console.log(`║  ✅ Health: http://localhost:${PORT}/api/health        ║`);
-  console.log(`║  🌍 Environment: ${process.env.NODE_ENV || 'development'} ║`);
+  console.log(`║  🌍 Env:    ${process.env.NODE_ENV || 'development'}              ║`);
   console.log('╚════════════════════════════════════════════════════════╝');
-  
-  logger.info(`CyForesight backend server started on port ${PORT}`);
 
-  // Ensure commonly used query paths remain fast in large datasets.
+  logger.info(`CyForesight backend started on port ${PORT}`);
   ensurePerformanceIndexes();
 });
 
-// Catch-all for unhandled promise rejections
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection:', reason);
-});
+process.on('SIGTERM', () => { shutdownSocketIO(); httpServer.close(); });
+process.on('SIGINT',  () => { shutdownSocketIO(); httpServer.close(); });
 
-// Catch-all for uncaught exceptions - exit after logging
-process.on('uncaughtException', (error) => {
-  logger.error('Uncaught Exception:', error);
-  process.exit(1);
-});
+process.on('unhandledRejection', (reason) => { logger.error('Unhandled Rejection:', reason); });
+process.on('uncaughtException',  (error) =>  { logger.error('Uncaught Exception:', error); process.exit(1); });
 
 export default app;
 
-// Start scheduler for automatic background jobs
 startScheduler();
