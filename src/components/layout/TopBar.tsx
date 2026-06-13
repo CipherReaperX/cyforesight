@@ -3,7 +3,7 @@ import { Bell, LogOut, Menu, RefreshCw, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSidebar } from './MainLayout'
-import { useSocket } from '@/hooks/useSocket'
+import { useSocketCtx } from '@/providers/SocketProvider'
 import api from '@/lib/api'
 
 function decodeJWTUser(): { username: string; role: string } | null {
@@ -24,7 +24,7 @@ const ROLE_COLORS: Record<string, string> = {
 }
 
 export default function TopBar() {
-  const { status } = useSocket()
+  const { status } = useSocketCtx()
   const queryClient = useQueryClient()
   const { toggle } = useSidebar()
   const [user] = useState(decodeJWTUser)

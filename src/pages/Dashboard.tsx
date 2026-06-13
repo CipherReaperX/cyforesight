@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, lazy, Suspense, useEffect } from 'react'
+import { useState, useMemo, useCallback, lazy, Suspense, useRef, useEffect } from 'react'
 import { AlertTriangle, Shield, ShieldCheck, Database, TrendingUp, TrendingDown, RefreshCw, Filter, Download, X, Globe, MapPin, Zap } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { useDashboardOverview, useGeoThreats } from '@/hooks/useDashboard'
 import { formatNumber, formatRelativeTime } from '@/lib/utils'
 import { useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 import type { GeoCountry } from '@/components/GeoMap'
@@ -69,33 +70,24 @@ export default function Dashboard() {
   const [selectedCountry, setSelectedCountry] = useState<GeoCountry | null>(null)
 
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { data: overview, isLoading, isFetching } = useDashboardOverview(dayRange, 10)
   const { data: geoCountries = [], isLoading: geoLoading } = useGeoThreats()
-  const { socket } = useSocketCtx()
 
-  // Live pulse from Socket.IO (replaces SSE)
-  const [pulse, setPulse] = useState<any>(null)
-  const [socketStatus, setSocketStatus] = useState<'connecting'|'connected'|'disconnected'>('connecting')
+  // All real-time state comes directly from SocketProvider context — no local subscriptions
+  const { status: socketStatus, pulse, lastIocFlash: flashCount } = useSocketCtx()
+
+  // Flash indicator: true for 2s after each ioc:new event
+  const prevFlashRef = useRef(flashCount)
   const [lastIocFlash, setLastIocFlash] = useState(false)
-
   useEffect(() => {
-    if (!socket) return
-    const onPulse  = (data: any) => setPulse(data)
-    const onIocNew = () => { setLastIocFlash(true); setTimeout(() => setLastIocFlash(false), 2000) }
-    const onConn   = () => setSocketStatus('connected')
-    const onDisc   = () => setSocketStatus('disconnected')
-    socket.on('dashboard:pulse', onPulse)
-    socket.on('ioc:new',         onIocNew)
-    socket.on('connect',         onConn)
-    socket.on('disconnect',      onDisc)
-    if (socket.connected) setSocketStatus('connected')
-    return () => {
-      socket.off('dashboard:pulse', onPulse)
-      socket.off('ioc:new',         onIocNew)
-      socket.off('connect',         onConn)
-      socket.off('disconnect',      onDisc)
+    if (flashCount !== prevFlashRef.current) {
+      prevFlashRef.current = flashCount
+      setLastIocFlash(true)
+      const t = setTimeout(() => setLastIocFlash(false), 2000)
+      return () => clearTimeout(t)
     }
-  }, [socket])
+  }, [flashCount])
 
   const stats = overview?.stats
   const trendData = overview?.threatTrend || []
@@ -320,7 +312,7 @@ export default function Dashboard() {
           [0, 1, 2, 3].map((i) => <StatCardSkeleton key={i} />)
         ) : (
           <>
-            <Card hoverable>
+            <Card hoverable onClick={() => navigate('/iocs?severity=critical')}>
               <CardContent>
                 <div className="flex items-start justify-between">
                   <div>
@@ -345,12 +337,12 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            <Card hoverable>
+            <Card hoverable onClick={() => navigate('/iocs')}>
               <CardContent>
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="text-sm text-slate-400">Total IOCs</p>
-                    <p className="mt-2 text-3xl font-bold text-blue-500">{formatNumber(stats?.totalIOCs || 0)}</p>
+                    <p className="mt-2 text-3xl font-bold text-blue-500">{formatNumber(pulse?.totalIocs ?? stats?.totalIOCs ?? 0)}</p>
                     <div className="mt-2 text-xs text-slate-400">
                       IP: {formatNumber(stats?.iocBreakdown?.ip || 0)} · Domain: {formatNumber(stats?.iocBreakdown?.domain || 0)}
                     </div>
@@ -362,7 +354,7 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            <Card hoverable>
+            <Card hoverable onClick={() => navigate('/iocs?status=blocked')}>
               <CardContent>
                 <div className="flex items-start justify-between">
                   <div>
@@ -377,12 +369,12 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            <Card hoverable>
+            <Card hoverable onClick={() => navigate('/assets')}>
               <CardContent>
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="text-sm text-slate-400">Assets at Risk</p>
-                    <p className="mt-2 text-3xl font-bold text-orange-500">{formatNumber(stats?.assetsAtRisk || 0)}</p>
+                    <p className="mt-2 text-3xl font-bold text-orange-500">{formatNumber(pulse?.assetsAtRisk ?? stats?.assetsAtRisk ?? 0)}</p>
                     <div className="mt-2 text-xs text-slate-400">With active threats</div>
                   </div>
                   <div className="rounded-full bg-orange-500/10 p-3">
