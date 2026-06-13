@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 215 52% 9%;
+    --foreground: 210 36% 96%;
+    --card: 216 42% 13%;
+    --card-foreground: 210 40% 98%;
+    --popover: 216 42% 13%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 190 96% 42%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 214 34% 20%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 214 34% 20%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 214 34% 20%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 212 31% 24%;
+    --input: 212 31% 24%;
+    --ring: 190 96% 42%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply text-slate-100 antialiased;
+    background: radial-gradient(circle at 8% 12%, rgba(6, 182, 212, 0.12), transparent 24%),
+      radial-gradient(circle at 92% 4%, rgba(249, 115, 22, 0.1), transparent 22%),
+      #0b1220;
+    font-family: 'Space Grotesk', 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-slate-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply rounded bg-slate-700;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-500;
+}
+
+/* Animations */
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out;
+}
