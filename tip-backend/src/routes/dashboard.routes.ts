@@ -11,5 +11,6 @@ router.get('/recent-threats', authenticate, dashboardController.getRecentThreats
 router.get('/feed-health', authenticate, dashboardController.getFeedHealth);
 router.get('/activity-timeline', authenticate, dashboardController.getActivityTimeline);
 router.get('/stream', authenticate, dashboardController.stream);
+router.post('/invalidate-cache', authenticate, dashboardController.invalidateCache);
 
 export default router;

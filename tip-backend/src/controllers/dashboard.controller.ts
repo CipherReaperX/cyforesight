@@ -6,8 +6,8 @@ import { sendSuccess, sendError } from '../utils/helpers';
 export class DashboardController {
   async getOverview(req: AuthRequest, res: Response) {
     try {
-      const { days = 30, limit = 10 } = req.query;
-      const overview = await dashboardService.getOverview(Number(days), Number(limit));
+      const { days = 30, limit = 10, refresh } = req.query;
+      const overview = await dashboardService.getOverview(Number(days), Number(limit), refresh === 'true');
       sendSuccess(res, overview);
     } catch (error: any) {
       sendError(res, error.message);
@@ -16,7 +16,8 @@ export class DashboardController {
 
   async getStats(req: AuthRequest, res: Response) {
     try {
-      const stats = await dashboardService.getStats();
+      const { refresh } = req.query;
+      const stats = await dashboardService.getStats(refresh === 'true');
       sendSuccess(res, stats);
     } catch (error: any) {
       sendError(res, error.message);
@@ -25,8 +26,8 @@ export class DashboardController {
 
   async getThreatTrend(req: AuthRequest, res: Response) {
     try {
-      const { days = 30 } = req.query;
-      const trend = await dashboardService.getThreatTrend(Number(days));
+      const { days = 30, refresh } = req.query;
+      const trend = await dashboardService.getThreatTrend(Number(days), refresh === 'true');
       sendSuccess(res, trend);
     } catch (error: any) {
       sendError(res, error.message);
@@ -35,8 +36,8 @@ export class DashboardController {
 
   async getRecentThreats(req: AuthRequest, res: Response) {
     try {
-      const { limit = 10 } = req.query;
-      const threats = await dashboardService.getRecentThreats(Number(limit));
+      const { limit = 10, refresh } = req.query;
+      const threats = await dashboardService.getRecentThreats(Number(limit), refresh === 'true');
       sendSuccess(res, threats);
     } catch (error: any) {
       sendError(res, error.message);
@@ -45,7 +46,8 @@ export class DashboardController {
 
   async getFeedHealth(req: AuthRequest, res: Response) {
     try {
-      const feeds = await dashboardService.getFeedHealth();
+      const { refresh } = req.query;
+      const feeds = await dashboardService.getFeedHealth(refresh === 'true');
       sendSuccess(res, feeds);
     } catch (error: any) {
       sendError(res, error.message);
@@ -57,6 +59,15 @@ export class DashboardController {
       const { hours = 24 } = req.query;
       const timeline = await dashboardService.getActivityTimeline(Number(hours));
       sendSuccess(res, timeline);
+    } catch (error: any) {
+      sendError(res, error.message);
+    }
+  }
+
+  async invalidateCache(req: AuthRequest, res: Response) {
+    try {
+      await dashboardService.invalidateCache();
+      sendSuccess(res, { message: 'Dashboard cache cleared' });
     } catch (error: any) {
       sendError(res, error.message);
     }
