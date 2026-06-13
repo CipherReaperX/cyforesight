@@ -1,18 +1,21 @@
-import { useState, useMemo, useCallback } from 'react'
-import { AlertTriangle, Shield, ShieldCheck, Database, TrendingUp, TrendingDown, RefreshCw, Filter, Download, X } from 'lucide-react'
+import { useState, useMemo, useCallback, lazy, Suspense } from 'react'
+import { AlertTriangle, Shield, ShieldCheck, Database, TrendingUp, TrendingDown, RefreshCw, Filter, Download, X, Globe, MapPin } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Progress } from '@/components/ui/Progress'
 import { Button } from '@/components/ui/Button'
-import { useDashboardOverview, useRealtimePulse } from '@/hooks/useDashboard'
+import { useDashboardOverview, useRealtimePulse, useGeoThreats } from '@/hooks/useDashboard'
 import { formatNumber, formatRelativeTime } from '@/lib/utils'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import api from '@/lib/api'
+import type { GeoCountry } from '@/components/GeoMap'
 import {
   LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, AreaChart, Area, BarChart, Bar,
 } from 'recharts'
+
+const GeoMap = lazy(() => import('@/components/GeoMap'))
 
 type BadgeVariant = 'default' | 'critical' | 'high' | 'medium' | 'low' | 'success' | 'warning' | 'danger'
 
@@ -62,10 +65,12 @@ export default function Dashboard() {
   const [dayRange, setDayRange] = useState(30)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [syncingFeedId, setSyncingFeedId] = useState<string | null>(null)
+  const [selectedCountry, setSelectedCountry] = useState<GeoCountry | null>(null)
 
   const queryClient = useQueryClient()
   const { data: overview, isLoading, isFetching } = useDashboardOverview(dayRange, 10)
   const { pulse } = useRealtimePulse()
+  const { data: geoCountries = [], isLoading: geoLoading } = useGeoThreats()
 
   const stats = overview?.stats
   const trendData = overview?.threatTrend || []
@@ -435,6 +440,138 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Geolocation World Map */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Globe className="h-5 w-5 text-cyan-400" />
+              <CardTitle>Global Threat Origin Map</CardTitle>
+              {!geoLoading && geoCountries.length > 0 && (
+                <span className="text-xs text-slate-400">
+                  {geoCountries.length} countries · {geoCountries.reduce((s: number, c: GeoCountry) => s + c.count, 0)} IPs
+                </span>
+              )}
+            </div>
+            {selectedCountry && (
+              <Button variant="ghost" size="sm" onClick={() => setSelectedCountry(null)}>
+                <X className="mr-1 h-3 w-3" />
+                Clear selection
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="p-0 pb-0">
+          <div className="grid grid-cols-1 lg:grid-cols-4">
+            {/* Map */}
+            <div className="lg:col-span-3" style={{ height: 420 }}>
+              {geoLoading ? (
+                <div className="flex h-full items-center justify-center text-slate-500 text-sm">
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Geolocating IPs…
+                </div>
+              ) : geoCountries.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-500">
+                  <Globe className="h-12 w-12 opacity-30" />
+                  <p className="text-sm">No IP IOCs to map yet. Sync a feed to populate.</p>
+                </div>
+              ) : (
+                <Suspense fallback={
+                  <div className="flex h-full items-center justify-center text-slate-500 text-sm">
+                    Loading map…
+                  </div>
+                }>
+                  <GeoMap
+                    countries={geoCountries}
+                    selectedCode={selectedCountry?.countryCode ?? null}
+                    onCountryClick={setSelectedCountry}
+                  />
+                </Suspense>
+              )}
+            </div>
+
+            {/* Top Countries Sidebar */}
+            <div className="border-t border-[#1f2d3d] p-4 lg:border-l lg:border-t-0">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Top Attacking Countries
+              </p>
+              {geoLoading ? (
+                <div className="space-y-2">
+                  {[0,1,2,3,4].map(i => (
+                    <div key={i} className="animate-pulse h-9 rounded bg-slate-700/60" />
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-1.5 overflow-y-auto" style={{ maxHeight: 370 }}>
+                  {geoCountries.slice(0, 15).map((c: GeoCountry, i: number) => {
+                    const isSelected = selectedCountry?.countryCode === c.countryCode
+                    const pct = geoCountries.length > 0
+                      ? Math.round((c.count / (geoCountries[0]?.count || 1)) * 100)
+                      : 0
+                    const color = c.critical > 0 ? 'bg-red-500' : c.high > 0 ? 'bg-orange-500' : c.medium > 0 ? 'bg-yellow-500' : 'bg-blue-500'
+                    return (
+                      <button
+                        key={c.countryCode}
+                        onClick={() => setSelectedCountry(isSelected ? null : c)}
+                        className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                          isSelected
+                            ? 'bg-cyan-500/20 border border-cyan-500/40'
+                            : 'hover:bg-slate-700/50 border border-transparent'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-slate-400 text-xs w-4 flex-shrink-0">{i + 1}</span>
+                            <MapPin className="h-3 w-3 flex-shrink-0 text-slate-500" />
+                            <span className="font-medium text-slate-200 truncate">{c.country}</span>
+                          </div>
+                          <span className="ml-2 flex-shrink-0 font-mono text-xs text-slate-300">{c.count}</span>
+                        </div>
+                        <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-700">
+                          <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Country drill-down detail strip */}
+          {selectedCountry && (
+            <div className="border-t border-[#1f2d3d] px-6 py-4">
+              <div className="flex flex-wrap items-center gap-6">
+                <div>
+                  <p className="text-xs text-slate-400">Country</p>
+                  <p className="font-bold text-slate-100">{selectedCountry.country} ({selectedCountry.countryCode})</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400">Total IPs</p>
+                  <p className="font-bold text-cyan-300">{formatNumber(selectedCountry.count)}</p>
+                </div>
+                <div className="flex gap-3 text-sm">
+                  {selectedCountry.critical > 0 && <span className="text-red-400">Critical: {selectedCountry.critical}</span>}
+                  {selectedCountry.high > 0 && <span className="text-orange-400">High: {selectedCountry.high}</span>}
+                  {selectedCountry.medium > 0 && <span className="text-yellow-400">Medium: {selectedCountry.medium}</span>}
+                  {selectedCountry.low > 0 && <span className="text-blue-400">Low: {selectedCountry.low}</span>}
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400">Last Seen</p>
+                  <p className="text-slate-300 text-sm">{formatRelativeTime(selectedCountry.latestSeen)}</p>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-400">Sample IPs</p>
+                  <p className="font-mono text-xs text-slate-400 truncate">
+                    {selectedCountry.sampleIPs.slice(0, 3).join(' · ')}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Bottom Row */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
