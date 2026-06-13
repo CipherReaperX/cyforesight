@@ -3,6 +3,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import { ErrorBoundary } from '../ErrorBoundary'
+import { SocketProvider } from '@/providers/SocketProvider'
 
 interface SidebarCtx { open: boolean; toggle: () => void; close: () => void }
 export const SidebarContext = createContext<SidebarCtx>({ open: true, toggle: () => {}, close: () => {} })
@@ -45,6 +46,7 @@ export default function MainLayout() {
   }
 
   return (
+    <SocketProvider>
     <SidebarContext.Provider value={{ open, toggle, close }}>
       <div className="flex h-screen overflow-hidden bg-[#0b1220]">
         {/* Overlay for mobile/tablet when sidebar open */}
@@ -81,5 +83,6 @@ export default function MainLayout() {
         </div>
       </div>
     </SidebarContext.Provider>
+    </SocketProvider>
   )
 }
