@@ -30,11 +30,11 @@ function markerColor(c: GeoCountry): string {
   return '#3b82f6'
 }
 
-// Count → radius px (log scale, clamp 7–34)
+// Count → radius px (log scale, clamp 4–16 — precise dots at world zoom)
 function markerRadius(count: number, max: number): number {
-  if (max === 0) return 7
+  if (max === 0) return 4
   const ratio = Math.log(count + 1) / Math.log(max + 1)
-  return Math.max(7, Math.round(ratio * 34))
+  return Math.max(4, Math.round(ratio * 16))
 }
 
 // Recenter map when countries list changes
