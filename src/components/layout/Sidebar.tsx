@@ -47,7 +47,10 @@ export default function Sidebar() {
   const user = getUser()
 
   return (
-    <div className="flex h-screen w-72 flex-col border-r border-[#1f2d3d] bg-gradient-to-b from-[#0f1724] via-[#111c2a] to-[#0b1320]">
+    <nav
+      aria-label="Main navigation"
+      className="flex h-screen w-72 flex-col border-r border-[#1f2d3d] bg-gradient-to-b from-[#0f1724] via-[#111c2a] to-[#0b1320]"
+    >
       <div className="flex h-20 items-center border-b border-[#1f2d3d] px-6">
         <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-2">
           <Shield className="h-6 w-6 text-cyan-300" />
@@ -65,8 +68,9 @@ export default function Sidebar() {
             <Link
               key={item.name}
               to={item.href}
+              aria-current={isActive ? 'page' : undefined}
               className={cn(
-                'group flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-all',
+                'group flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
                 isActive
                   ? 'border border-cyan-400/40 bg-cyan-500/15 text-cyan-100 shadow-[0_0_0_1px_rgba(34,211,238,0.18)]'
                   : 'border border-transparent text-slate-300 hover:border-slate-700 hover:bg-slate-800/70 hover:text-white'
@@ -96,6 +100,6 @@ export default function Sidebar() {
           </div>
         )}
       </div>
-    </div>
+    </nav>
   )
 }

@@ -85,7 +85,7 @@ export function useSyncAllFeedsForIOCs() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async () => {
-      const { data } = await apiClient.post('/feeds/sync-all')
+      const { data } = await apiClient.post('/feeds/sync-all?wait=true', {}, { timeout: 60000 })
       return data.data
     },
     onSuccess: () => {

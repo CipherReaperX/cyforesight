@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import MainLayout from './components/layout/MainLayout'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 const Login = lazy(() => import('./pages/Login'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -35,6 +36,7 @@ function PageLoader() {
 function App() {
   return (
     <>
+      <ErrorBoundary>
       <Suspense fallback={<div className="flex h-screen items-center justify-center bg-[#0b1220]"><PageLoader /></div>}>
         <Routes>
           <Route path="/login" element={<Login />} />
@@ -58,6 +60,7 @@ function App() {
           </Route>
         </Routes>
       </Suspense>
+      </ErrorBoundary>
       <Toaster position="top-right" theme="dark" />
     </>
   )

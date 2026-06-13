@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { Rss, Plus, Play, Pause, RefreshCw, Settings, Trash2, CheckCircle, AlertCircle, XCircle, Shield, Globe } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
@@ -13,6 +13,16 @@ export default function ThreatFeeds() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [syncingId, setSyncingId] = useState<string | null>(null)
   const [newFeed, setNewFeed] = useState({ name: '', url: '', type: 'json' })
+  const firstInputRef = useRef<HTMLInputElement>(null)
+
+  // Escape key + focus management for modal
+  useEffect(() => {
+    if (!showAddModal) return
+    firstInputRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowAddModal(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [showAddModal])
   
   // Fetch all threat feeds/integrations
   const { data: feedsData, isLoading, refetch } = useQuery({
@@ -55,14 +65,15 @@ export default function ThreatFeeds() {
 
   // Calculate stats safely
   const activeFeeds = feeds.filter(f => f.enabled || f.isActive || f.status === 'active' || f.status === 'connected').length
-  const totalIOCs = feeds.reduce((sum, f) => sum + (f.iocCount || f.totalIOCs || 0), 0)
+  const totalIOCs = feeds.reduce((sum, f) => sum + (f.totalIocs || f.iocCount || f.totalIOCs || 0), 0)
 
   const handleSyncFeed = async (feedId: string) => {
     setSyncingId(feedId)
     try {
-      await api.post(`/feeds/${feedId}/sync`)
+      const { data } = await api.post(`/feeds/${feedId}/sync`, {}, { timeout: 30000 })
+      const result = data?.data
       refetch()
-      toast.success('Feed sync triggered')
+      toast.success(result ? `Sync done — ${result.inserted ?? 0} new IOCs` : 'Feed synced')
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'Failed to sync feed')
     } finally {
@@ -205,21 +216,21 @@ export default function ThreatFeeds() {
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-400">Last Sync</span>
                     <span className="text-slate-300">
-                      {feed.lastFetched || feed.lastSync 
-                        ? formatRelativeTime(feed.lastFetched || feed.lastSync) 
+                      {feed.lastFetch
+                        ? formatRelativeTime(feed.lastFetch)
                         : 'Never'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-400">IOCs Fetched</span>
+                    <span className="text-slate-400">Total IOCs</span>
                     <Badge variant="success">
-                      {formatNumber(feed.iocCount || feed.totalIOCs || 0)}
+                      {formatNumber(feed.totalIocs || 0)}
                     </Badge>
                   </div>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-400">Fetch Interval</span>
-                    <span className="text-slate-300">
-                      {feed.fetchInterval ? `${Math.floor(feed.fetchInterval / 60)}m` : 'Manual'}
+                    <span className="text-slate-400">Frequency</span>
+                    <span className="text-slate-300 capitalize">
+                      {feed.frequency || 'Manual'}
                     </span>
                   </div>
                   {feed.url && (
@@ -274,35 +285,45 @@ export default function ThreatFeeds() {
 
       {/* Add Feed Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <Card className="w-full max-w-2xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-feed-title"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowAddModal(false) }}
+        >
+          <Card className="w-full max-w-lg">
             <CardHeader>
-              <CardTitle>Add New Threat Feed</CardTitle>
+              <CardTitle id="add-feed-title">Add New Threat Feed</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm text-slate-400">Feed Name</label>
+                  <label htmlFor="feed-name" className="text-sm text-slate-400">Feed Name</label>
                   <input
-                    className="mt-1 w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-slate-100"
+                    id="feed-name"
+                    ref={firstInputRef}
+                    className="mt-1 w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-slate-100 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                     placeholder="e.g., AlienVault OTX"
                     value={newFeed.name}
                     onChange={(e) => setNewFeed({ ...newFeed, name: e.target.value })}
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-slate-400">Feed URL</label>
+                  <label htmlFor="feed-url" className="text-sm text-slate-400">Feed URL</label>
                   <input
-                    className="mt-1 w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-slate-100"
+                    id="feed-url"
+                    className="mt-1 w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-slate-100 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                     placeholder="https://..."
                     value={newFeed.url}
                     onChange={(e) => setNewFeed({ ...newFeed, url: e.target.value })}
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-slate-400">Feed Type</label>
+                  <label htmlFor="feed-type" className="text-sm text-slate-400">Feed Type</label>
                   <select
-                    className="mt-1 w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-slate-100"
+                    id="feed-type"
+                    className="mt-1 w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-slate-100 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
                     value={newFeed.type}
                     onChange={(e) => setNewFeed({ ...newFeed, type: e.target.value })}
                   >
@@ -312,7 +333,7 @@ export default function ThreatFeeds() {
                     <option value="stix">STIX</option>
                   </select>
                 </div>
-                <div className="flex space-x-4">
+                <div className="flex space-x-3 pt-2">
                   <Button variant="primary" onClick={handleAddFeed}>Add Feed</Button>
                   <Button variant="outline" onClick={() => setShowAddModal(false)}>Cancel</Button>
                 </div>
