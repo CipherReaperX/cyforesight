@@ -52,8 +52,14 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Compression middleware to reduce response size
-app.use(compression());
+// Compression middleware — skip SSE streams (compression buffers chunked responses and breaks EventSource)
+app.use(compression({
+  filter: (req, res) => {
+    if (res.getHeader('Content-Type') === 'text/event-stream') return false;
+    if (req.path.endsWith('/stream')) return false;
+    return compression.filter(req, res);
+  },
+}));
 
 // Logging HTTP requests
 app.use(morgan('combined', {
