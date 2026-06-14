@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Search, Plus, Download, Upload, Eye, MoreVertical, Copy, RefreshCw } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
@@ -16,15 +17,31 @@ import { useIOCDistribution } from '@/hooks/useDashboard'
 type BadgeVariant = 'default' | 'critical' | 'high' | 'medium' | 'low' | 'info' | 'success' | 'warning' | 'danger'
 
 export default function IOCManagement() {
-  const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch] = useState('')
-  const [filters, setFilters] = useState({
+  const [searchParams] = useSearchParams()
+
+  const [searchInput, setSearchInput] = useState(() => searchParams.get('search') || '')
+  const [search, setSearch] = useState(() => searchParams.get('search') || '')
+  const [filters, setFilters] = useState(() => ({
     skip: 0,
     take: 25,
-    type: '',
-    severity: '',
-    status: '',
-  })
+    type: searchParams.get('type') || '',
+    severity: searchParams.get('severity') || '',
+    status: searchParams.get('status') || '',
+  }))
+
+  // Sync filters when URL params change (e.g. stat card navigation while page is mounted)
+  useEffect(() => {
+    setFilters(f => ({
+      ...f,
+      skip: 0,
+      type: searchParams.get('type') || '',
+      severity: searchParams.get('severity') || '',
+      status: searchParams.get('status') || '',
+    }))
+    const s = searchParams.get('search') || ''
+    setSearchInput(s)
+    setSearch(s)
+  }, [searchParams])
 
   // Debounce search input by 350ms
   useEffect(() => {

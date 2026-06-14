@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useRef, ReactNode, useCallback } from 'react'
 import { io, Socket } from 'socket.io-client'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import api from '@/lib/api'
 
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected'
 
@@ -13,14 +14,34 @@ export type PulseData = {
   incidentsOpen: number
 }
 
+export type NotificationType = 'feed_sync' | 'feed_error' | 'ioc_spike' | 'system'
+
+export type AppNotification = {
+  id: string
+  type: NotificationType
+  title: string
+  body: string
+  meta?: Record<string, unknown>
+  read: boolean
+  ts: string
+}
+
 type SocketCtx = {
   socket: Socket | null
   status: SocketStatus
   pulse: PulseData | null
-  lastIocFlash: number   // increments on every ioc:new → consumers compare to prev
+  lastIocFlash: number
+  notifications: AppNotification[]
+  unreadCount: number
+  markAllRead: () => Promise<void>
+  markNotificationRead: (id: string) => Promise<void>
 }
 
-const defaultCtx: SocketCtx = { socket: null, status: 'connecting', pulse: null, lastIocFlash: 0 }
+const noop = async () => {}
+const defaultCtx: SocketCtx = {
+  socket: null, status: 'connecting', pulse: null, lastIocFlash: 0,
+  notifications: [], unreadCount: 0, markAllRead: noop, markNotificationRead: noop,
+}
 const Ctx = createContext<SocketCtx>(defaultCtx)
 export const useSocketCtx = () => useContext(Ctx)
 
@@ -42,9 +63,26 @@ const BACKEND_URL = (() => {
 export function SocketProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
 
-  // All state in one object to minimise renders
   const [ctxValue, setCtxValue] = useState<SocketCtx>(defaultCtx)
   const socketRef = useRef<Socket | null>(null)
+
+  // Notification mutations — stable refs so they can be in context without re-renders
+  const markAllRead = useCallback(async () => {
+    setCtxValue(v => ({
+      ...v,
+      notifications: v.notifications.map(n => ({ ...n, read: true })),
+      unreadCount: 0,
+    }))
+    try { await api.post('/notifications/read-all') } catch { /* optimistic */ }
+  }, [])
+
+  const markNotificationRead = useCallback(async (id: string) => {
+    setCtxValue(v => {
+      const updated = v.notifications.map(n => n.id === id ? { ...n, read: true } : n)
+      return { ...v, notifications: updated, unreadCount: updated.filter(n => !n.read).length }
+    })
+    try { await api.post(`/notifications/${id}/read`) } catch { /* optimistic */ }
+  }, [])
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -52,6 +90,18 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       setCtxValue(v => ({ ...v, status: 'disconnected' }))
       return
     }
+
+    // Seed notification state from REST (ring buffer persists across socket reconnects)
+    api.get('/notifications').then(res => {
+      const d = res.data?.data ?? res.data
+      if (Array.isArray(d?.items)) {
+        setCtxValue(v => ({
+          ...v,
+          notifications: d.items,
+          unreadCount: d.unread ?? d.items.filter((n: AppNotification) => !n.read).length,
+        }))
+      }
+    }).catch(() => { /* backend may not be up yet; socket init event will fill in */ })
 
     const s = io(BACKEND_URL, {
       auth: { token },
@@ -63,7 +113,6 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     })
     socketRef.current = s
 
-    // Expose socket immediately so consumers can add listeners even before connect
     setCtxValue(v => ({ ...v, socket: s, status: 'connecting' }))
 
     s.on('connect', () => {
@@ -98,6 +147,18 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     })
 
+    // Single source of truth for notification state — handled here, not in useNotifications
+    s.on('notification:init', (payload: { items: AppNotification[]; unread: number }) => {
+      setCtxValue(v => ({ ...v, notifications: payload.items, unreadCount: payload.unread }))
+    })
+
+    s.on('notification:new', (n: AppNotification) => {
+      setCtxValue(v => {
+        const updated = [n, ...v.notifications].slice(0, 100)
+        return { ...v, notifications: updated, unreadCount: updated.filter(x => !x.read).length }
+      })
+    })
+
     return () => {
       s.disconnect()
       socketRef.current = null
@@ -105,5 +166,6 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     }
   }, [queryClient])
 
-  return <Ctx.Provider value={ctxValue}>{children}</Ctx.Provider>
+  const value: SocketCtx = { ...ctxValue, markAllRead, markNotificationRead }
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
