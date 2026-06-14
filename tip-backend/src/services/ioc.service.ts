@@ -1,4 +1,5 @@
 import { eq, and, ilike, sql, desc, gte } from 'drizzle-orm';
+import { dispatchEvent } from './integration.service';
 import db from '../config/database';
 import { iocs } from '../models/schema';
 import { IOCCreateInput, IOCUpdateInput } from '../types';
@@ -131,8 +132,16 @@ export class IOCService {
 
     logger.info(`IOC created: ${input.value} by user ${userId}`);
 
-    // TODO: Queue ML scoring job
-    // TODO: Queue enrichment job
+    // Fire integration dispatch for critical/high manually-created IOCs
+    if (input.severity === 'critical' || input.severity === 'high') {
+      dispatchEvent(input.severity === 'critical' ? 'critical_ioc' : 'high_ioc', {
+        type: input.severity === 'critical' ? 'critical_ioc' : 'high_ioc',
+        severity: input.severity,
+        title: `New ${input.severity} IOC detected`,
+        body: `${input.type.toUpperCase()}: ${input.value}`,
+        meta: { iocId: newIOC.id, type: input.type, value: input.value },
+      }).catch(() => {});
+    }
 
     return newIOC;
   }

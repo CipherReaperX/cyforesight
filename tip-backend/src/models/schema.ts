@@ -238,6 +238,20 @@ export const threatHuntQueries = pgTable('threat_hunt_queries', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Integrations Table (Slack, Teams, Discord, Webhook, Email, VirusTotal)
+export const integrations = pgTable('integrations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  type: varchar('type', { length: 50 }).notNull(),
+  name: varchar('name', { length: 100 }).notNull().unique(),
+  enabled: boolean('enabled').default(false).notNull(),
+  config: jsonb('config').default({}).notNull(),
+  status: varchar('status', { length: 30 }).default('not_configured').notNull(),
+  lastUsed: timestamp('last_used', { withTimezone: true }),
+  lastResult: jsonb('last_result'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 // Reports Table
 export const reports = pgTable('reports', {
   id: uuid('id').defaultRandom().primaryKey(),
