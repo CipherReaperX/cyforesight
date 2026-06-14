@@ -9,7 +9,66 @@ export type SocketEvent =
   | 'dashboard:refresh'
   | 'ioc:new'
   | 'feed:synced'
-  | 'feed:error';
+  | 'feed:error'
+  | 'notification:new';
+
+// ─── In-memory notification ring buffer ──────────────────────────────────────
+
+export type NotificationType = 'feed_sync' | 'feed_error' | 'ioc_spike' | 'system';
+
+export type Notification = {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  meta?: Record<string, unknown>;
+  read: boolean;
+  ts: string;
+};
+
+const MAX_NOTIFICATIONS = 100;
+let notificationBuffer: Notification[] = [];
+let notificationSeq = 0;
+
+export function addNotification(
+  type: NotificationType,
+  title: string,
+  body: string,
+  meta?: Record<string, unknown>
+): Notification {
+  const n: Notification = {
+    id: `n-${Date.now()}-${++notificationSeq}`,
+    type,
+    title,
+    body,
+    meta: meta ?? {},
+    read: false,
+    ts: new Date().toISOString(),
+  };
+  notificationBuffer.unshift(n);
+  if (notificationBuffer.length > MAX_NOTIFICATIONS) notificationBuffer.pop();
+  emit('notification:new', n);
+  return n;
+}
+
+export function getNotifications(limit = 50): Notification[] {
+  return notificationBuffer.slice(0, limit);
+}
+
+export function getUnreadCount(): number {
+  return notificationBuffer.filter(n => !n.read).length;
+}
+
+export function markAllRead(): void {
+  notificationBuffer = notificationBuffer.map(n => ({ ...n, read: true }));
+}
+
+export function markRead(id: string): void {
+  const idx = notificationBuffer.findIndex(n => n.id === id);
+  if (idx !== -1) notificationBuffer[idx] = { ...notificationBuffer[idx], read: true };
+}
+
+// ─── Socket.IO server ─────────────────────────────────────────────────────────
 
 let io: SocketIOServer | null = null;
 let pulseTimer: ReturnType<typeof setInterval> | null = null;
@@ -26,14 +85,11 @@ export function initSocketIO(httpServer: HTTPServer): SocketIOServer {
     pingInterval: 25000,
   });
 
-  // JWT auth middleware
   io.use((socket: Socket, next) => {
     const token =
       (socket.handshake.auth as any)?.token ||
       (socket.handshake.query?.token as string);
-
     if (!token) return next(new Error('unauthorized: no token'));
-
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET || 'changeme');
       (socket.data as any).user = payload;
@@ -51,16 +107,20 @@ export function initSocketIO(httpServer: HTTPServer): SocketIOServer {
       logger.info(`Socket disconnected: ${socket.id} — ${reason}`);
     });
 
-    // Client can request an immediate pulse on connect
     socket.on('pulse:request', async () => {
       try {
         const pulse = await dashboardService.getRealtimePulse();
         socket.emit('dashboard:pulse', pulse);
       } catch { /* ignore */ }
     });
+
+    // Send current notification state to newly connected client
+    socket.emit('notification:init', {
+      items: getNotifications(50),
+      unread: getUnreadCount(),
+    });
   });
 
-  // Broadcast pulse every 5 seconds
   pulseTimer = setInterval(async () => {
     if (!io || io.engine.clientsCount === 0) return;
     try {
@@ -73,21 +133,17 @@ export function initSocketIO(httpServer: HTTPServer): SocketIOServer {
   return io;
 }
 
-/** Emit an event to all connected clients */
 export function emit(event: SocketEvent, payload: unknown): void {
   if (!io) return;
   io.emit(event, payload);
 }
 
-/** Emit to a specific socket (if you ever need per-user events) */
 export function emitTo(socketId: string, event: SocketEvent, payload: unknown): void {
   if (!io) return;
   io.to(socketId).emit(event, payload);
 }
 
-export function getIO(): SocketIOServer | null {
-  return io;
-}
+export function getIO(): SocketIOServer | null { return io; }
 
 export function shutdownSocketIO(): void {
   if (pulseTimer) { clearInterval(pulseTimer); pulseTimer = null; }
