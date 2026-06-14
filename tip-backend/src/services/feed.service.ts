@@ -6,7 +6,7 @@ import { iocs, threatFeeds } from '../models/schema';
 import logger from '../config/logger';
 import { feedFetchQueue } from '../config/queue';
 import iocService from './ioc.service';
-import { emit } from './socket.service';
+import { emit, addNotification } from './socket.service';
 
 export class FeedService {
   private detectIOCType(value: string): (typeof iocs.$inferInsert)['type'] | null {
@@ -165,9 +165,22 @@ export class FeedService {
 
       logger.info(`Feed sync completed immediately: ${id} (${inserted} new IOCs)`);
 
-      // Broadcast real-time events to all connected dashboard clients
+      // Broadcast real-time events + push notification
       if (inserted > 0) {
         emit('ioc:new', { feedId: id, feedName: feed.name, count: inserted });
+        addNotification(
+          'feed_sync',
+          `Feed synced: ${feed.name}`,
+          `${inserted} new IOCs imported (${toInsert.length} parsed)`,
+          { feedId: id, inserted, parsed: toInsert.length }
+        );
+      } else {
+        addNotification(
+          'feed_sync',
+          `Feed synced: ${feed.name}`,
+          `No new IOCs (${toInsert.length} already known)`,
+          { feedId: id, inserted: 0, parsed: toInsert.length }
+        );
       }
       emit('feed:synced', { feedId: id, feedName: feed.name, inserted, parsed: toInsert.length });
 
@@ -179,6 +192,13 @@ export class FeedService {
         inserted,
       };
     } catch (error: any) {
+      addNotification(
+        'feed_error',
+        `Feed error: ${feed?.name ?? id}`,
+        error?.message || 'Feed sync failed',
+        { feedId: id }
+      );
+      emit('feed:error', { feedId: id, feedName: feed?.name ?? id, error: error?.message });
       await this.upsertFeedHealth(feed.id, {
         status: 'error',
         importedInc: 0,

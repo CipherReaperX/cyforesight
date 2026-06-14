@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Bell, LogOut, Menu, RefreshCw, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSidebar } from './MainLayout'
 import { useSocketCtx } from '@/providers/SocketProvider'
+import { useNotifications } from '@/hooks/useNotifications'
+import { NotificationPanel } from '@/components/NotificationPanel'
 import api from '@/lib/api'
 
 function decodeJWTUser(): { username: string; role: string } | null {
@@ -31,6 +33,9 @@ export default function TopBar() {
   const [lastUpdate, setLastUpdate] = useState(new Date())
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [tick, setTick] = useState(0)
+  const [bellOpen, setBellOpen] = useState(false)
+  const bellRef = useRef<HTMLButtonElement>(null)
+  const { unread } = useNotifications()
 
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 30000)
@@ -104,10 +109,29 @@ export default function TopBar() {
         </Button>
 
         {/* Notifications bell */}
-        <Button variant="outline" size="sm" className="relative" aria-label="Notifications">
-          <Bell className="h-5 w-5" />
-          <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-500" aria-hidden="true" />
-        </Button>
+        <div className="relative">
+          <Button
+            ref={bellRef}
+            variant="outline"
+            size="sm"
+            className="relative"
+            aria-label={`Notifications${unread > 0 ? ` (${unread} unread)` : ''}`}
+            aria-expanded={bellOpen}
+            onClick={() => setBellOpen(o => !o)}
+          >
+            <Bell className="h-5 w-5" />
+            {unread > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white" aria-hidden="true">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            )}
+          </Button>
+          <NotificationPanel
+            open={bellOpen}
+            onClose={() => setBellOpen(false)}
+            anchorRef={bellRef}
+          />
+        </div>
 
         {/* User info + logout */}
         {user && (
