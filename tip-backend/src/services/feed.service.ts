@@ -7,6 +7,7 @@ import logger from '../config/logger';
 import { feedFetchQueue } from '../config/queue';
 import iocService from './ioc.service';
 import { emit, addNotification } from './socket.service';
+import { dispatchEvent } from './integration.service';
 
 export class FeedService {
   private detectIOCType(value: string): (typeof iocs.$inferInsert)['type'] | null {
@@ -183,6 +184,15 @@ export class FeedService {
         );
       }
       emit('feed:synced', { feedId: id, feedName: feed.name, inserted, parsed: toInsert.length });
+      // Dispatch to enabled integrations (fire-and-forget, don't block feed sync response)
+      dispatchEvent('feed_sync', {
+        type: 'feed_sync',
+        title: `Feed synced: ${feed.name}`,
+        body: inserted > 0
+          ? `${inserted} new IOCs imported from ${feed.name}`
+          : `No new IOCs from ${feed.name} (${toInsert.length} already known)`,
+        meta: { feedId: id, inserted, parsed: toInsert.length },
+      }).catch(() => {/* silently ignore dispatch failures */});
 
       return {
         mode: 'immediate',
@@ -199,6 +209,13 @@ export class FeedService {
         { feedId: id }
       );
       emit('feed:error', { feedId: id, feedName: feed?.name ?? id, error: error?.message });
+      dispatchEvent('feed_error', {
+        type: 'feed_error',
+        severity: 'high',
+        title: `Feed error: ${feed?.name ?? id}`,
+        body: error?.message || 'Feed sync failed',
+        meta: { feedId: id },
+      }).catch(() => {});
       await this.upsertFeedHealth(feed.id, {
         status: 'error',
         importedInc: 0,

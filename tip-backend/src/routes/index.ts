@@ -14,6 +14,7 @@ import reportRoutes from './report.routes';
 import incidentRoutes from './incident.routes';
 import huntingRoutes from './hunting.routes';
 import notificationRoutes from './notification.routes';
+import integrationRoutes from './integration.routes';
 
 const router = Router();
 
@@ -31,6 +32,7 @@ router.use('/reports', reportRoutes);
 router.use('/incidents', incidentRoutes);
 router.use('/hunting', huntingRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/integrations', integrationRoutes);
 
 // Health check endpoint
 router.get('/health', (req, res) => {

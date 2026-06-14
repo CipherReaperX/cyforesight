@@ -10,7 +10,8 @@ export type SocketEvent =
   | 'ioc:new'
   | 'feed:synced'
   | 'feed:error'
-  | 'notification:new';
+  | 'notification:new'
+  | 'integration:update';
 
 // ─── In-memory notification ring buffer ──────────────────────────────────────
 
