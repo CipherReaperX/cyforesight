@@ -39,7 +39,7 @@ export class IOCService {
     if (cached) return cached;
 
     const conditions = [];
-    
+
     if (filters.type) {
       conditions.push(eq(iocs.type, filters.type));
     }
@@ -55,24 +55,20 @@ export class IOCService {
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const rows = await db.query.iocs.findMany({
-      where: whereClause,
-      limit: take + 1,
-      offset: skip,
-      orderBy: [desc(iocs.createdAt)],
-    });
-    const hasMore = rows.length > take;
-    const items = hasMore ? rows.slice(0, take) : rows;
-    // Exact count on multi-million IOC tables is expensive; use lower-bound total for responsive UX.
-    const total = skip + items.length + (hasMore ? 1 : 0);
+    const [countResult, rows] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` }).from(iocs).where(whereClause),
+      db.query.iocs.findMany({
+        where: whereClause,
+        limit: take,
+        offset: skip,
+        orderBy: [desc(iocs.createdAt)],
+      }),
+    ]);
 
-    const result = {
-      items,
-      total,
-      hasMore,
-    };
+    const total = Number(countResult[0]?.count || 0);
+    const result = { items: rows, total, hasMore: skip + rows.length < total };
 
-    await cacheSet(cacheKey, result, 300); // 5 min cache
+    await cacheSet(cacheKey, result, 300);
     return result;
   }
 

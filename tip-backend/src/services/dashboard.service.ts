@@ -147,13 +147,16 @@ export class DashboardService {
       if (cached) return cached;
     }
 
-    // Try threat detections first
+    // Only use threatDetections if at least one record is from the last 7 days —
+    // otherwise the table holds stale seed data that shows as "months ago" in the UI.
+    const recentCutoff = subDays(new Date(), 7);
     const detections = await db.query.threatDetections.findMany({
       limit: safeLimit,
       orderBy: (td, { desc }) => [desc(td.timestamp)],
     });
+    const freshDetections = detections.filter(d => new Date(d.timestamp) >= recentCutoff);
 
-    if (detections.length >= 3) {
+    if (freshDetections.length >= 1) {
       const mapped = detections.map(t => ({
         id: t.id,
         name: t.name,
@@ -170,9 +173,9 @@ export class DashboardService {
       return mapped;
     }
 
-    // Fall back to recent high-severity IOCs as "threats"
+    // Fall back to most-recent IOCs of any severity — all feed-synced IOCs are
+    // 'medium', so filtering to critical/high would return nothing.
     const recentIOCs = await db.query.iocs.findMany({
-      where: (ioc, { inArray }) => inArray(ioc.severity, ['critical', 'high']),
       limit: safeLimit,
       orderBy: (ioc, { desc }) => [desc(ioc.lastSeen)],
     });
