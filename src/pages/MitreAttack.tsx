@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Target, TrendingUp, Shield, Loader2, Search, Radar, Network } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Target, TrendingUp, Shield, Loader2, Search, Radar, Network, X, ChevronRight } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -11,13 +12,14 @@ import {
   useMitreTechniquesAdvanced,
   useMitreAssetCorrelation,
 } from '@/hooks/useMitre'
-import { useThreatActors } from '@/hooks/useIOCs'
-import { formatNumber } from '@/lib/utils'
+import { useThreatActors, useIOCs } from '@/hooks/useIOCs'
+import { formatNumber, formatRelativeTime } from '@/lib/utils'
 
 export default function MitreAttack() {
   const [selectedTactic, setSelectedTactic] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [onlyDetected, setOnlyDetected] = useState(false)
+  const [drillTechnique, setDrillTechnique] = useState<{ id: string; name: string } | null>(null)
 
   const { data: tacticsData } = useMitreTactics()
   const { data: coverageData } = useMitreCoverage()
@@ -31,6 +33,11 @@ export default function MitreAttack() {
   const { data: correlationData, isLoading: correlationLoading } = useMitreAssetCorrelation(120, 6)
   const { data: threatActorsData } = useThreatActors(10000)
   const mapIOCsMutation = useMapIOCsToMitre()
+
+  const { data: drillIOCsData, isLoading: drillLoading } = useIOCs(
+    drillTechnique ? { technique: drillTechnique.id, take: 20 } : {},
+    { enabled: !!drillTechnique },
+  )
 
   const tactics = Array.isArray(tacticsData) ? tacticsData : []
   const techniques = Array.isArray(techniquesData) ? techniquesData : []
@@ -197,28 +204,92 @@ export default function MitreAttack() {
               <div className="py-12 text-center text-slate-400">No techniques match current filters.</div>
             ) : (
               <div className="space-y-2">
-                {techniques.map((technique: any) => (
-                  <div key={technique.id} className="rounded-lg border border-slate-700 bg-slate-800/50 p-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-mono text-xs text-blue-400">{technique.id}</p>
-                        <h4 className="text-sm font-semibold text-slate-100">{technique.name}</h4>
+                {techniques.map((technique: any) => {
+                  const hasDetections = Number(technique.detections || 0) > 0
+                  const isSelected = drillTechnique?.id === technique.techniqueId
+                  return (
+                    <button
+                      key={technique.id}
+                      onClick={() => setDrillTechnique(
+                        isSelected ? null : { id: technique.techniqueId, name: technique.name }
+                      )}
+                      className={`w-full rounded-lg border p-3 text-left transition ${
+                        isSelected
+                          ? 'border-cyan-500 bg-cyan-500/10 ring-1 ring-cyan-500/40'
+                          : hasDetections
+                          ? 'border-orange-700/60 bg-orange-900/10 hover:border-orange-500/60'
+                          : 'border-slate-700 bg-slate-800/50 hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-mono text-xs text-blue-400">{technique.techniqueId || technique.id}</p>
+                          <h4 className="text-sm font-semibold text-slate-100">{technique.name}</h4>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={hasDetections ? 'danger' : 'default'}>
+                            {technique.detections || 0} detections
+                          </Badge>
+                          <Badge variant="warning">{technique.affectedAssets || 0} assets</Badge>
+                          <ChevronRight className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${isSelected ? 'rotate-90' : ''}`} />
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={Number(technique.detections || 0) > 0 ? 'danger' : 'default'}>
-                          {technique.detections || 0} detections
-                        </Badge>
-                        <Badge variant="warning">{technique.affectedAssets || 0} assets</Badge>
-                      </div>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-400 line-clamp-2">{technique.description || 'No description available'}</p>
-                  </div>
-                ))}
+                      <p className="mt-1 text-xs text-slate-400 line-clamp-2">{technique.description || 'No description available'}</p>
+                    </button>
+                  )
+                })}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {/* Technique IOC Drill-in Panel */}
+      {drillTechnique && (
+        <Card className="border-cyan-500/40 bg-cyan-950/20">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-cyan-300">
+                <Target className="h-4 w-4" />
+                IOCs mapped to {drillTechnique.id} — {drillTechnique.name}
+              </CardTitle>
+              <button onClick={() => setDrillTechnique(null)} className="rounded p-1 text-slate-400 hover:text-slate-200">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {drillLoading ? (
+              <div className="py-8 text-center text-slate-400">Loading IOCs...</div>
+            ) : (drillIOCsData?.items ?? []).length === 0 ? (
+              <p className="py-4 text-sm text-slate-500">No IOCs are mapped to this technique yet. Run "Map Diverse IOCs to TTPs" first.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {(drillIOCsData?.items ?? []).map((ioc: any) => (
+                  <Link
+                    key={ioc.id}
+                    to={`/iocs/${ioc.id}`}
+                    className="block rounded border border-slate-700 bg-slate-900/70 p-3 hover:border-cyan-500/50 hover:bg-slate-800/80"
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="truncate font-mono text-xs text-slate-200">{ioc.value}</span>
+                      <Badge variant={ioc.severity === 'critical' ? 'danger' : ioc.severity === 'high' ? 'warning' : 'default'}>
+                        {ioc.severity}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      {ioc.type} • conf {ioc.confidence}% • {formatRelativeTime(ioc.lastSeen)}
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            )}
+            {(drillIOCsData?.total ?? 0) > 20 && (
+              <p className="mt-3 text-xs text-slate-500">Showing 20 of {drillIOCsData?.total} IOCs. Filter by this technique in the IOC list for the full set.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <Card className="xl:col-span-8">

@@ -214,6 +214,26 @@ export class IOCController {
       sendError(res, error.message, 400);
     }
   }
+
+  async getRelatedIOCs(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const limit = Math.min(Number(req.query.limit || 10), 50);
+      const related = await iocService.getRelatedIOCs(id, limit);
+      sendSuccess(res, related);
+    } catch (error: any) {
+      sendError(res, error.message, error.message.includes('not found') ? 404 : 500);
+    }
+  }
+
+  async getAnomalies(_req: AuthRequest, res: Response) {
+    try {
+      const result = await iocService.getAnomalies();
+      sendSuccess(res, result);
+    } catch (error: any) {
+      sendError(res, error.message);
+    }
+  }
 }
 
 export default new IOCController();
