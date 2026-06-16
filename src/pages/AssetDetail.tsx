@@ -1,11 +1,13 @@
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Server, ShieldAlert, Bug, Activity, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Server, ShieldAlert, Bug, Activity, ShieldCheck, Scan } from 'lucide-react'
 import { ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
-import { useAsset, useAssetThreats, useAssetVulnerabilities, useRecheckAssetIOCsVT } from '@/hooks/useAssets'
+import { useAsset, useAssetThreats, useAssetVulnerabilities, useRecheckAssetIOCsVT, useScanAsset } from '@/hooks/useAssets'
 import { formatRelativeTime } from '@/lib/utils'
+import { toast } from 'sonner'
 
 const severityColors: Record<string, string> = {
   critical: '#ef4444',
@@ -17,10 +19,27 @@ const severityColors: Record<string, string> = {
 
 export default function AssetDetail() {
   const { assetId } = useParams<{ assetId: string }>()
-  const { data: asset, isLoading } = useAsset(assetId || '')
+  const { data: asset, isLoading, refetch } = useAsset(assetId || '')
   const { data: threatData } = useAssetThreats(assetId || '')
   const { data: vulnData } = useAssetVulnerabilities(assetId || '')
   const recheckVT = useRecheckAssetIOCsVT()
+  const scanAsset = useScanAsset()
+  const [scanning, setScanning] = useState(false)
+
+  const handleScan = async () => {
+    if (!asset) return
+    setScanning(true)
+    try {
+      const result = await scanAsset.mutateAsync(asset.id)
+      const checks = result?.checksRun ?? 0
+      toast.success(`Scan complete — ${checks} check${checks !== 1 ? 's' : ''} run`)
+      refetch()
+    } catch (e: any) {
+      toast.error(`Scan failed: ${e?.message}`)
+    } finally {
+      setScanning(false)
+    }
+  }
 
   if (isLoading) {
     return <div className="text-slate-400">Loading asset details...</div>
@@ -63,10 +82,19 @@ export default function AssetDetail() {
           </Link>
           <div>
             <h1 className="text-3xl font-bold text-slate-100">{asset.name}</h1>
-            <p className="text-slate-400">{asset.type.replace('_', ' ')} • {asset.department || 'N/A'}</p>
+            <p className="text-slate-400">{(asset.type || '').replace('_', ' ')} • {asset.department || 'N/A'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleScan}
+            disabled={scanning}
+          >
+            <Scan className="mr-2 h-4 w-4" />
+            {scanning ? 'Scanning…' : 'Scan Now'}
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -81,6 +109,17 @@ export default function AssetDetail() {
           </Badge>
         </div>
       </div>
+
+      {/* Meta row */}
+      {(asset.hostname || asset.ip || asset.os || asset.owner) && (
+        <div className="flex flex-wrap gap-6 rounded-lg border border-slate-700 bg-slate-800/40 px-5 py-3 text-sm">
+          {asset.ip && <span className="text-slate-400">IP: <span className="font-mono text-slate-200">{asset.ip}</span></span>}
+          {asset.hostname && <span className="text-slate-400">Host: <span className="font-mono text-slate-200">{asset.hostname}</span></span>}
+          {asset.os && <span className="text-slate-400">OS: <span className="text-slate-200">{asset.os}</span></span>}
+          {asset.owner && <span className="text-slate-400">Owner: <span className="text-slate-200">{asset.owner}</span></span>}
+          {asset.lastScan && <span className="text-slate-400">Last scan: <span className="text-slate-200">{formatRelativeTime(asset.lastScan)}</span></span>}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <Card><CardContent><div className="flex items-center justify-between"><div><p className="text-sm text-slate-400">Risk Score</p><p className="text-2xl font-bold text-amber-400">{asset.riskScore || 0}</p></div><ShieldAlert className="h-7 w-7 text-amber-400" /></div></CardContent></Card>
@@ -123,42 +162,59 @@ export default function AssetDetail() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        {/* Mapped IOCs — each row links to full IOC detail */}
         <Card>
-          <CardHeader><CardTitle>Mapped IOCs</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Mapped IOCs ({iocs.length})</CardTitle></CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {iocs.slice(0, 20).map((ioc: any) => (
-                <div key={ioc.id} className="rounded-md border border-slate-700 bg-slate-900/70 p-3">
-                  <div className="flex items-center justify-between">
+            <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+              {iocs.slice(0, 30).map((ioc: any) => (
+                <Link
+                  key={ioc.id}
+                  to={`/iocs/${ioc.id}`}
+                  className="block rounded-md border border-slate-700 bg-slate-900/70 p-3 transition-colors hover:border-cyan-500/60 hover:bg-slate-800/80"
+                >
+                  <div className="flex items-center justify-between gap-2">
                     <span className="truncate font-mono text-xs text-slate-200">{ioc.value}</span>
                     <Badge variant="danger">{ioc.severity}</Badge>
                   </div>
                   <div className="mt-1 text-[11px] text-slate-400">
                     {ioc.type} • score {Number(ioc.score || 0).toFixed(2)}
                   </div>
-                </div>
+                </Link>
               ))}
-              {iocs.length === 0 && <p className="text-sm text-slate-500">No mapped IOCs yet.</p>}
+              {iocs.length === 0 && (
+                <p className="text-sm text-slate-500">No mapped IOCs yet. Run "Map IOCs" from the Asset Inventory page.</p>
+              )}
             </div>
           </CardContent>
         </Card>
 
+        {/* Mapped Vulnerabilities — each row links to full CVE detail */}
         <Card>
-          <CardHeader><CardTitle>Mapped Vulnerabilities</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Mapped Vulnerabilities ({vulns.length})</CardTitle></CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {vulns.slice(0, 20).map((cve: any) => (
-                <div key={cve.id || cve.cveId} className="rounded-md border border-slate-700 bg-slate-900/70 p-3">
-                  <div className="flex items-center justify-between">
+            <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+              {vulns.slice(0, 30).map((cve: any) => (
+                <Link
+                  key={cve.id || cve.cveId}
+                  to={`/cves/${cve.id}`}
+                  className="block rounded-md border border-slate-700 bg-slate-900/70 p-3 transition-colors hover:border-orange-500/60 hover:bg-slate-800/80"
+                >
+                  <div className="flex items-center justify-between gap-2">
                     <span className="font-mono text-xs text-orange-300">{cve.cveId}</span>
                     <Badge variant={cve.severity === 'critical' ? 'danger' : cve.severity === 'high' ? 'warning' : 'default'}>
                       {cve.severity}
                     </Badge>
                   </div>
                   <p className="mt-1 line-clamp-2 text-xs text-slate-400">{cve.description}</p>
-                </div>
+                  {cve.cvssScore && (
+                    <p className="mt-0.5 text-[11px] text-slate-500">CVSS {Number(cve.cvssScore).toFixed(1)}</p>
+                  )}
+                </Link>
               ))}
-              {vulns.length === 0 && <p className="text-sm text-slate-500">No mapped vulnerabilities yet.</p>}
+              {vulns.length === 0 && (
+                <p className="text-sm text-slate-500">No vulnerabilities mapped yet.</p>
+              )}
             </div>
           </CardContent>
         </Card>
