@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Target, TrendingUp, Shield, Loader2, Search, Radar, Network, X, ChevronRight } from 'lucide-react'
+import { Target, TrendingUp, Shield, Loader2, Search, Radar, Network, X, ChevronRight, RefreshCw } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -21,16 +21,16 @@ export default function MitreAttack() {
   const [onlyDetected, setOnlyDetected] = useState(false)
   const [drillTechnique, setDrillTechnique] = useState<{ id: string; name: string } | null>(null)
 
-  const { data: tacticsData } = useMitreTactics()
-  const { data: coverageData } = useMitreCoverage()
+  const { data: tacticsData, refetch: refetchTactics } = useMitreTactics()
+  const { data: coverageData, refetch: refetchCoverage } = useMitreCoverage()
   const { data: mapStatus } = useMitreMapStatus()
-  const { data: techniquesData = [], isLoading: techniquesLoading } = useMitreTechniquesAdvanced({
+  const { data: techniquesData = [], isLoading: techniquesLoading, refetch: refetchTechniques } = useMitreTechniquesAdvanced({
     tactic: selectedTactic || undefined,
     hasDetections: onlyDetected,
     search: search || undefined,
     limit: 5000,
   })
-  const { data: correlationData, isLoading: correlationLoading } = useMitreAssetCorrelation(120, 6)
+  const { data: correlationData, isLoading: correlationLoading, refetch: refetchCorrelation } = useMitreAssetCorrelation(120, 6)
   const { data: threatActorsData } = useThreatActors(10000)
   const mapIOCsMutation = useMapIOCsToMitre()
 
@@ -75,6 +75,13 @@ export default function MitreAttack() {
           <p className="text-slate-400">Complete TTP coverage, IOC mapping, and asset correlation intelligence</p>
         </div>
         <div className="flex space-x-2">
+          <Button
+            variant="outline"
+            onClick={() => { refetchTactics(); refetchCoverage(); refetchTechniques(); refetchCorrelation() }}
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
           <Button
             variant="primary"
             onClick={() => mapIOCsMutation.mutate({ batchSize: 3000, maxBatches: 20, async: true })}
@@ -317,7 +324,11 @@ export default function MitreAttack() {
                     </div>
                     <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
                       {Array.isArray(row.topAssets) && row.topAssets.map((asset: any) => (
-                        <div key={asset.assetId} className="rounded border border-slate-700 bg-slate-900/70 p-2">
+                        <Link
+                          key={asset.assetId}
+                          to={`/assets/${asset.assetId}`}
+                          className="block rounded border border-slate-700 bg-slate-900/70 p-2 hover:border-cyan-500/40 hover:bg-slate-800/60 transition-colors"
+                        >
                           <div className="flex items-center justify-between text-xs">
                             <span className="text-slate-200">{asset.assetName}</span>
                             <span className="text-amber-400">score {asset.score}</span>
@@ -326,7 +337,7 @@ export default function MitreAttack() {
                             <span>{asset.assetType}</span>
                             <span>{asset.department || 'N/A'}</span>
                           </div>
-                        </div>
+                        </Link>
                       ))}
                     </div>
                   </div>
