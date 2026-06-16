@@ -10,6 +10,7 @@ interface IOCFilters {
   severity?: string
   status?: string
   search?: string
+  technique?: string
 }
 
 interface FreshIOCsResponse {
@@ -19,7 +20,8 @@ interface FreshIOCsResponse {
   items: IOC[]
 }
 
-export function useIOCs(filters: IOCFilters = {}) {
+export function useIOCs(filters: IOCFilters = {}, options: { enabled?: boolean } = {}) {
+  const enabled = options.enabled !== undefined ? options.enabled : true
   return useQuery<{ items: IOC[]; total: number }>({
     queryKey: ['iocs', filters],
     queryFn: async () => {
@@ -33,6 +35,7 @@ export function useIOCs(filters: IOCFilters = {}) {
       const { data } = await apiClient.get(`/iocs?${params}`)
       return data.data
     },
+    enabled,
   })
 }
 
@@ -44,6 +47,28 @@ export function useIOC(id: string) {
       return data.data
     },
     enabled: !!id,
+  })
+}
+
+export function useRelatedIOCs(id: string) {
+  return useQuery<IOC[]>({
+    queryKey: ['iocs', id, 'related'],
+    queryFn: async () => {
+      const { data } = await apiClient.get(`/iocs/${id}/related`)
+      return data.data as IOC[]
+    },
+    enabled: !!id,
+  })
+}
+
+export function useIOCAnomalies() {
+  return useQuery({
+    queryKey: ['iocs', 'anomalies'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/iocs/anomalies')
+      return data.data
+    },
+    refetchInterval: 60000,
   })
 }
 

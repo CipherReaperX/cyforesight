@@ -143,6 +143,8 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     s.on('feed:synced', () => {
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview'] })
       queryClient.invalidateQueries({ queryKey: ['assets'] })
+      queryClient.invalidateQueries({ queryKey: ['threat-feeds'] })
+      queryClient.invalidateQueries({ queryKey: ['iocs', 'anomalies'] })
     })
 
     s.on('dashboard:refresh', () => {

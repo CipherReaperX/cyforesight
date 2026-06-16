@@ -1,4 +1,4 @@
-import { eq, and, ilike, sql, desc, gte } from 'drizzle-orm';
+import { eq, and, ne, ilike, sql, desc, gte } from 'drizzle-orm';
 import { dispatchEvent } from './integration.service';
 import db from '../config/database';
 import { iocs } from '../models/schema';
@@ -52,6 +52,9 @@ export class IOCService {
     }
     if (filters.search) {
       conditions.push(ilike(iocs.value, `%${filters.search}%`));
+    }
+    if ((filters as any).technique) {
+      conditions.push(sql`${iocs.mitreTechniques} @> ARRAY[${(filters as any).technique}]::text[]`);
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -350,6 +353,72 @@ export class IOCService {
       requested: target,
       inserted: rows.length,
       generatedAt: now.toISOString(),
+    };
+  }
+
+  async getRelatedIOCs(id: string, limit: number = 10) {
+    const ioc = await this.getIOCById(id);
+    const safeLimit = Math.min(Math.max(1, limit), 50);
+
+    const candidates = await db.query.iocs.findMany({
+      where: and(ne(iocs.id, id), eq(iocs.type, ioc.type)),
+      orderBy: [desc(iocs.lastSeen)],
+      limit: safeLimit * 5,
+    });
+
+    const iocTags = new Set((ioc.tags || []) as string[]);
+    const iocTechniques = new Set((ioc.mitreTechniques || []) as string[]);
+    const iocSources = new Set((ioc.sources || []) as string[]);
+
+    const scored = candidates
+      .map((r) => {
+        const tagOverlap = ((r.tags || []) as string[]).filter((t) => iocTags.has(t)).length;
+        const techniqueOverlap = ((r.mitreTechniques || []) as string[]).filter((t) => iocTechniques.has(t)).length;
+        const sourceOverlap = ((r.sources || []) as string[]).filter((s) => iocSources.has(s)).length;
+        return { ...r, _relevance: tagOverlap * 2 + techniqueOverlap * 3 + sourceOverlap * 1.5 };
+      })
+      .sort((a, b) => b._relevance - a._relevance)
+      .slice(0, safeLimit)
+      .map(({ _relevance, ...r }) => r);
+
+    return scored;
+  }
+
+  async getAnomalies() {
+    const result = await db.execute(sql`
+      SELECT date_trunc('hour', created_at) AS hour, count(*)::int AS count
+      FROM iocs
+      WHERE created_at >= now() - interval '7 days'
+      GROUP BY hour
+      ORDER BY hour DESC
+    `);
+
+    const rows = (result as any).rows as Array<{ hour: unknown; count: number }>;
+    if (!rows || rows.length < 4) {
+      return { anomalies: [], baseline: 0, stddev: 0, windowHours: rows?.length ?? 0, latestAnomaly: null };
+    }
+
+    const counts = rows.map((r) => Number(r.count));
+    const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
+    const variance = counts.reduce((a, b) => a + (b - mean) ** 2, 0) / counts.length;
+    const stddev = Math.sqrt(variance);
+    const threshold = mean + 2 * Math.max(stddev, 1);
+
+    const anomalies = rows
+      .filter((r) => Number(r.count) >= Math.max(threshold, 2))
+      .map((r) => ({
+        hour: r.hour,
+        count: Number(r.count),
+        zScore: Number(((Number(r.count) - mean) / Math.max(stddev, 1)).toFixed(2)),
+        explanation: `${Number(r.count)} IOCs in 1h (${mean > 0 ? ((Number(r.count) / mean - 1) * 100).toFixed(0) : '∞'}% above 7-day avg of ${mean.toFixed(0)}/h)`,
+      }));
+
+    return {
+      baseline: Math.round(mean),
+      stddev: Math.round(stddev * 10) / 10,
+      windowHours: rows.length,
+      anomalies: anomalies.slice(0, 5),
+      latestAnomaly: anomalies[0] || null,
     };
   }
 }

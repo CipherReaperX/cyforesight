@@ -1,6 +1,6 @@
 import axios from 'axios';
 import Papa from 'papaparse';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, inArray } from 'drizzle-orm';
 import db from '../config/database';
 import { iocs, threatFeeds } from '../models/schema';
 import logger from '../config/logger';
@@ -43,6 +43,10 @@ export class FeedService {
     const importedInc = payload.importedInc || 0;
     const currentTotal = Number(feed.totalIocs || 0);
     const currentErrors = Number(feed.errorCount || 0);
+    const currentHealth = Number(feed.healthScore ?? 100);
+    const newHealthScore = payload.errored
+      ? Math.max(0, currentHealth - 15)
+      : Math.min(100, currentHealth + (importedInc > 0 ? 5 : 2));
 
     await db
       .update(threatFeeds)
@@ -50,6 +54,7 @@ export class FeedService {
         status: payload.status || 'active',
         iocsImported: importedInc,
         totalIocs: currentTotal + importedInc,
+        healthScore: newHealthScore,
         lastFetch: new Date(),
         errorMessage: payload.errorMessage ?? null,
         errorCount: payload.errored ? currentErrors + 1 : 0,
@@ -149,11 +154,24 @@ export class FeedService {
 
       let inserted = 0;
       if (toInsert.length > 0) {
-        // Batch inserts to avoid Drizzle query-builder stack overflow on large arrays
         const BATCH_SIZE = 500;
         for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
           const batch = toInsert.slice(i, i + BATCH_SIZE);
-          const result = await db.insert(iocs).values(batch).onConflictDoNothing().returning({ id: iocs.id });
+          const batchValues = batch.map((r) => r.value);
+
+          // Dedup: filter out (value, type) pairs that already exist — avoids duplicates
+          // since the iocs table has no DB-level unique constraint on (value, type)
+          const existing = await db
+            .select({ value: iocs.value, type: iocs.type })
+            .from(iocs)
+            .where(inArray(iocs.value, batchValues));
+
+          const existingSet = new Set(existing.map((r) => `${r.value}|${r.type}`));
+          const newOnly = batch.filter((r) => !existingSet.has(`${r.value}|${r.type}`));
+
+          if (newOnly.length === 0) continue;
+
+          const result = await db.insert(iocs).values(newOnly).returning({ id: iocs.id });
           inserted += result.length;
         }
       }

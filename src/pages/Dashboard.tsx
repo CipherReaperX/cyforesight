@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, lazy, Suspense, useRef, useEffect } from 'react'
 import { AlertTriangle, Shield, ShieldCheck, Database, TrendingUp, TrendingDown, RefreshCw, Filter, Download, X, Globe, MapPin, Zap } from 'lucide-react'
+import AnomalyPanel from '@/components/AnomalyPanel'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Progress } from '@/components/ui/Progress'
@@ -386,6 +387,9 @@ export default function Dashboard() {
           </>
         )}
       </div>
+
+      {/* Anomaly Detection Panel */}
+      <AnomalyPanel />
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

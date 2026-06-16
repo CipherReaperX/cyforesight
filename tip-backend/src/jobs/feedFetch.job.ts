@@ -3,7 +3,7 @@ import axios from 'axios';
 import Papa from 'papaparse';
 import db from '../config/database';
 import { iocs, threatFeeds } from '../models/schema';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import logger from '../config/logger';
 import redis from '../config/redis';
 
@@ -14,6 +14,8 @@ export interface FeedFetchJobData {
   feedName: string;
 }
 
+const BATCH_SIZE = 500;
+
 export const feedFetchWorker = new Worker(
   'feed-fetch',
   async (job) => {
@@ -22,100 +24,127 @@ export const feedFetchWorker = new Worker(
     logger.info(`Fetching feed: ${feedName} from ${feedUrl}`);
 
     try {
-      // Check if API key required
       if (feedName.includes('AlienVault') || feedName.includes('VirusTotal')) {
-        const apiKey = feedName.includes('AlienVault') 
-          ? process.env.ALIENVAULT_API_KEY 
+        const apiKey = feedName.includes('AlienVault')
+          ? process.env.ALIENVAULT_API_KEY
           : process.env.VIRUSTOTAL_API_KEY;
-        
+
         if (!apiKey) {
           logger.warn(`⚠️  ${feedName} requires API key, skipping...`);
           return { skipped: true, reason: 'API key not configured' };
         }
       }
 
-      // Fetch feed data
       const response = await axios.get(feedUrl, {
         timeout: 30000,
-        headers: { 'User-Agent': 'CyForesight/1.0' }
+        headers: { 'User-Agent': 'CyForesight/1.0' },
+        responseType: 'text',
+        maxContentLength: 10 * 1024 * 1024,
+        decompress: true,
       });
 
-      let iocCount = 0;
+      // Slice very large feeds
+      let rawData: string = typeof response.data === 'string' ? response.data : String(response.data);
+      if (rawData.length > 3 * 1024 * 1024) {
+        const cutAt = rawData.lastIndexOf('\n', 3 * 1024 * 1024);
+        rawData = cutAt > 0 ? rawData.slice(0, cutAt) : rawData.slice(0, 3 * 1024 * 1024);
+      }
 
-      // Parse based on feed type
+      const now = new Date();
+      const toInsert: Array<typeof iocs.$inferInsert> = [];
+
       if (feedType === 'json') {
-        const data = response.data;
-        const indicators: any[] = data.results || data.indicators || [];
-        
-        for (const indicator of indicators) {
-          const iocValue = indicator.indicator || indicator.value;
-          if (!iocValue) continue;
+        const data = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+        const indicators: any[] = Array.isArray(data)
+          ? data
+          : data?.results || data?.indicators || data?.data || [];
 
+        for (const indicator of indicators) {
+          const iocValue = String(indicator?.indicator || indicator?.value || '').trim();
+          if (!iocValue) continue;
           const iocType = detectIOCType(iocValue);
           if (!iocType) continue;
 
-          await db.insert(iocs).values({
+          toInsert.push({
             value: iocValue,
             type: iocType,
             sources: [feedName],
-            confidence: indicator.confidence || 50,
-            severity: normalizeSeverity(indicator.threat_level),
-            firstSeen: new Date(),
-            lastSeen: new Date(),
-            tags: indicator.tags || [],
-            description: indicator.description || '',
-          }).onConflictDoNothing();
-          
-          iocCount++;
+            confidence: Number(indicator?.confidence || 50),
+            severity: normalizeSeverity(indicator?.threat_level || indicator?.severity),
+            firstSeen: now,
+            lastSeen: now,
+            tags: Array.isArray(indicator?.tags) ? indicator.tags : [],
+            description: indicator?.description || '',
+          });
         }
       } else if (feedType === 'csv') {
-        // Use Papa Parse for CSV
-        const parsed = Papa.parse(response.data, {
+        const parsed = Papa.parse(rawData, {
           header: false,
           skipEmptyLines: true,
         });
 
         for (const row of parsed.data as Array<string[]>) {
-          // Skip comments
-          if (typeof row[0] === 'string' && row[0].startsWith('#')) continue;
-          
-          const iocValue = row[0]?.toString().trim();
-          if (!iocValue) continue;
+          const firstCell = typeof row[0] === 'string' ? row[0].trim() : '';
+          if (!firstCell || firstCell.startsWith('#')) continue;
 
-          const iocType = detectIOCType(iocValue);
-          if (!iocType) continue;
+          // Scan all cells for a recognizable IOC value
+          let iocValue: string | null = null;
+          let iocType: ReturnType<typeof detectIOCType> | null = null;
+          for (const cell of row) {
+            const candidate = String(cell ?? '').trim().replace(/^"(.*)"$/, '$1').trim();
+            if (!candidate || candidate.startsWith('#')) continue;
+            const t = detectIOCType(candidate);
+            if (t) { iocValue = candidate; iocType = t; break; }
+          }
+          if (!iocValue || !iocType) continue;
 
-          await db.insert(iocs).values({
+          toInsert.push({
             value: iocValue,
             type: iocType,
             sources: [feedName],
             confidence: 70,
             severity: 'medium',
-            firstSeen: new Date(),
-            lastSeen: new Date(),
+            firstSeen: now,
+            lastSeen: now,
             tags: ['imported'],
-            description: row[1]?.toString().trim() || '',
-          }).onConflictDoNothing();
-          
-          iocCount++;
+            description: '',
+          });
         }
       }
 
-      // Update feed last_fetched timestamp
+      // Batch insert with pre-dedup (no unique constraint on iocs table)
+      let inserted = 0;
+      for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
+        const batch = toInsert.slice(i, i + BATCH_SIZE);
+        const batchValues = batch.map((r) => r.value);
+
+        const existing = await db
+          .select({ value: iocs.value, type: iocs.type })
+          .from(iocs)
+          .where(inArray(iocs.value, batchValues));
+
+        const existingSet = new Set(existing.map((r) => `${r.value}|${r.type}`));
+        const newOnly = batch.filter((r) => !existingSet.has(`${r.value}|${r.type}`));
+
+        if (newOnly.length === 0) continue;
+        const result = await db.insert(iocs).values(newOnly).returning({ id: iocs.id });
+        inserted += result.length;
+      }
+
       await db.update(threatFeeds)
-        .set({ lastFetch: new Date() })
+        .set({ lastFetch: new Date(), iocsImported: inserted, updatedAt: new Date() })
         .where(eq(threatFeeds.id, feedId));
 
-      logger.info(`✅ Fetched ${iocCount} IOCs from ${feedName}`);
-      
-      return { success: true, iocCount };
-      
+      logger.info(`✅ Fetched ${inserted} new IOCs from ${feedName} (${toInsert.length} parsed)`);
+
+      return { success: true, inserted, parsed: toInsert.length };
+
     } catch (error: any) {
       if (error.response?.status === 401 || error.response?.status === 403) {
         logger.warn(`⚠️  ${feedName}: API authentication failed`);
         return { skipped: true, reason: 'Authentication failed' };
       }
-      
+
       if (error.response?.status === 404) {
         logger.warn(`⚠️  ${feedName}: URL not found (404)`);
         return { skipped: true, reason: 'URL not found' };
@@ -128,36 +157,19 @@ export const feedFetchWorker = new Worker(
   { connection: redis }
 );
 
-// Helper function to detect IOC type
 function detectIOCType(value: string): (typeof iocs.$inferInsert)['type'] | null {
   if (!value) return null;
-  
-  value = value.trim();
-  
-  // URL
-  if (/^https?:\/\//.test(value)) return 'url';
-  
-  // IP address
-  if (/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(value)) return 'ip';
-  
-  // Hash (MD5, SHA1, SHA256)
-  if (/^[a-f0-9]{32}$/i.test(value)) return 'hash';
-  if (/^[a-f0-9]{40}$/i.test(value)) return 'hash';
-  if (/^[a-f0-9]{64}$/i.test(value)) return 'hash';
-  
-  // Email
-  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'email';
-  
-  // Domain (if it has a dot and no protocol)
-  if (/^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/.test(value)) return 'domain';
-  
+  const v = value.trim();
+  if (/^https?:\/\//.test(v)) return 'url';
+  if (/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(v)) return 'ip';
+  if (/^[a-f0-9]{32}$/i.test(v) || /^[a-f0-9]{40}$/i.test(v) || /^[a-f0-9]{64}$/i.test(v)) return 'hash';
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'email';
+  if (/^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/.test(v)) return 'domain';
   return null;
 }
 
 function normalizeSeverity(value: unknown): (typeof iocs.$inferInsert)['severity'] {
-  const severity = String(value || '').toLowerCase();
-  if (severity === 'critical' || severity === 'high' || severity === 'medium' || severity === 'low' || severity === 'info') {
-    return severity;
-  }
+  const s = String(value || '').toLowerCase();
+  if (s === 'critical' || s === 'high' || s === 'medium' || s === 'low' || s === 'info') return s;
   return 'medium';
 }
