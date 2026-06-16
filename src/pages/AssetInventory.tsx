@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { Progress } from '@/components/ui/Progress'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
-import { useAssets, useBootstrapSmallEnterpriseAssets, useAssetThreats, useAssetVulnerabilities, useMapIOCsToAssets } from '@/hooks/useAssets'
+import { useAssets, useBootstrapSmallEnterpriseAssets, useAssetThreats, useAssetVulnerabilities, useMapIOCsToAssets, useScanAsset } from '@/hooks/useAssets'
 import { formatRelativeTime } from '@/lib/utils'
 import apiClient from '@/lib/api'
 import { Link } from 'react-router-dom'
@@ -27,6 +27,8 @@ export default function AssetInventory() {
   const { data, isLoading, refetch } = useAssets(filters)
   const bootstrapEnterprise = useBootstrapSmallEnterpriseAssets()
   const mapIOCs = useMapIOCsToAssets()
+  const scanAsset = useScanAsset()
+  const [scanningId, setScanningId] = useState<string | null>(null)
   const { data: selectedThreats } = useAssetThreats(selectedAssetId || '')
   const { data: selectedVulns } = useAssetVulnerabilities(selectedAssetId || '')
   const assets = data || { items: [], total: 0 }
@@ -92,6 +94,15 @@ export default function AssetInventory() {
   const handleMapIOCsToAssets = async () => {
     await mapIOCs.mutateAsync(40)
     if (refetch) refetch()
+  }
+
+  const handleScan = async (assetId: string) => {
+    setScanningId(assetId)
+    try {
+      await scanAsset.mutateAsync(assetId)
+    } finally {
+      setScanningId(null)
+    }
   }
 
   return (
@@ -315,7 +326,14 @@ export default function AssetInventory() {
                           <Link to={`/assets/${asset.id}`}>
                             <Button size="sm" variant="ghost">View</Button>
                           </Link>
-                          <Button size="sm" variant="primary">Scan</Button>
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            disabled={scanningId === asset.id}
+                            onClick={() => handleScan(asset.id)}
+                          >
+                            {scanningId === asset.id ? 'Scanning…' : 'Scan'}
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -394,7 +412,14 @@ export default function AssetInventory() {
                     <Link to={`/assets/${asset.id}`} className="flex-1">
                       <Button size="sm" variant="outline" className="w-full">View Details</Button>
                     </Link>
-                    <Button size="sm" variant="primary">Scan Now</Button>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={scanningId === asset.id}
+                      onClick={() => handleScan(asset.id)}
+                    >
+                      {scanningId === asset.id ? 'Scanning…' : 'Scan Now'}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
