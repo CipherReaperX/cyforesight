@@ -41,7 +41,7 @@ export function useIOC(id: string) {
     queryKey: ['iocs', id],
     queryFn: async () => {
       const { data } = await apiClient.get(`/iocs/${id}`)
-      return data
+      return data.data
     },
     enabled: !!id,
   })

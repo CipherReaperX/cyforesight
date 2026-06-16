@@ -136,11 +136,13 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       setCtxValue(v => ({ ...v, lastIocFlash: v.lastIocFlash + 1 }))
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'geo-threats'] })
+      queryClient.invalidateQueries({ queryKey: ['assets'] })
       toast.info(`${data.feedName}: +${data.count} new IOCs`, { duration: 3000 })
     })
 
     s.on('feed:synced', () => {
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview'] })
+      queryClient.invalidateQueries({ queryKey: ['assets'] })
     })
 
     s.on('dashboard:refresh', () => {

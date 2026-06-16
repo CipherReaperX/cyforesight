@@ -20,6 +20,7 @@ const Integrations = lazy(() => import('./pages/Integrations'))
 const IOCDetail = lazy(() => import('./pages/IOCDetail'))
 const IncidentWorkbench = lazy(() => import('./pages/IncidentWorkbench'))
 const ExposurePriorities = lazy(() => import('./pages/ExposurePriorities'))
+const CVEDetail = lazy(() => import('./pages/CVEDetail'))
 
 function PageLoader() {
   return (
@@ -49,6 +50,7 @@ function App() {
             <Route path="assets/:assetId" element={<Suspense fallback={<PageLoader />}><AssetDetail /></Suspense>} />
             <Route path="mitre" element={<Suspense fallback={<PageLoader />}><MitreAttack /></Suspense>} />
             <Route path="cves" element={<Suspense fallback={<PageLoader />}><CVETracker /></Suspense>} />
+            <Route path="cves/:cveId" element={<Suspense fallback={<PageLoader />}><CVEDetail /></Suspense>} />
             <Route path="feeds" element={<Suspense fallback={<PageLoader />}><ThreatFeeds /></Suspense>} />
             <Route path="hunt" element={<Suspense fallback={<PageLoader />}><ThreatHunting /></Suspense>} />
             <Route path="reports" element={<Suspense fallback={<PageLoader />}><Reports /></Suspense>} />
