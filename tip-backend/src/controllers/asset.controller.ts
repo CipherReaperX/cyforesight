@@ -133,6 +133,35 @@ export class AssetController {
     }
   }
 
+  async getStats(req: AuthRequest, res: Response) {
+    try {
+      const stats = await assetService.getStats();
+      sendSuccess(res, stats);
+    } catch (error: any) {
+      sendError(res, error.message);
+    }
+  }
+
+  async exportAssets(req: AuthRequest, res: Response) {
+    try {
+      const { type, status, search } = req.query as Record<string, string>;
+      const rows = await assetService.exportAssets({ type, status, search });
+      const header = 'id,name,type,ip,hostname,os,department,owner,riskScore,activeThreats,unpatchedCves,status,lastScan\n';
+      const csv = header + rows.map(r =>
+        [r.id, r.name, r.type, r.ip ?? '', r.hostname ?? '', r.os ?? '', r.department ?? '',
+         r.owner ?? '', r.riskScore ?? 0, r.activeThreats ?? 0, r.unpatchedCves ?? 0,
+         r.status, r.lastScan ? new Date(r.lastScan).toISOString() : '']
+          .map(v => `"${String(v).replace(/"/g, '""')}"`)
+          .join(',')
+      ).join('\n');
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="assets.csv"');
+      res.send(csv);
+    } catch (error: any) {
+      sendError(res, error.message);
+    }
+  }
+
   async scanAsset(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;

@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 interface TableProps {
   children: React.ReactNode
   className?: string
+  onClick?: () => void
 }
 
 export function Table({ children, className }: TableProps) {
@@ -21,13 +22,15 @@ export function TableBody({ children, className }: TableProps) {
   return <tbody className={cn('[&_tr:last-child]:border-0', className)}>{children}</tbody>
 }
 
-export function TableRow({ children, className }: TableProps) {
+export function TableRow({ children, className, onClick }: TableProps) {
   return (
     <tr
       className={cn(
         'border-b border-slate-700 transition-colors hover:bg-slate-700/50',
+        onClick && 'cursor-pointer',
         className
       )}
+      onClick={onClick}
     >
       {children}
     </tr>

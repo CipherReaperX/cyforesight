@@ -112,6 +112,17 @@ export function useAssetThreats(id: string) {
   })
 }
 
+export function useAssetStats() {
+  return useQuery<{ total: number; highRisk: number; totalThreats: number; totalCVEs: number; avgRisk: number }>({
+    queryKey: ['assets', 'stats'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/assets/stats')
+      return data.data
+    },
+    refetchInterval: 60000,
+  })
+}
+
 export function useBootstrapSmallEnterpriseAssets() {
   const queryClient = useQueryClient()
   return useMutation({

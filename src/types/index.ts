@@ -108,16 +108,24 @@ export interface Asset {
   id: string
   name: string
   type: AssetType
-  ip: string
+  ip?: string
+  hostname?: string
+  macAddress?: string
+  os?: string
+  osVersion?: string
+  department?: string
+  owner?: string
+  location?: string
   riskScore: number
   criticality: number
   activeThreats: number
   unpatchedCVEs: number
   status: 'online' | 'offline' | 'unknown'
-  department: string
-  os: string
   tags: string[]
-  lastScan: string
+  metadata?: Record<string, unknown>
+  lastScan?: string
+  createdAt?: string
+  updatedAt?: string
 }
 
 export type AssetType = 'server' | 'workstation' | 'network_device' | 'cloud_resource' | 'application'
