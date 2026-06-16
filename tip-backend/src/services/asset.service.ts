@@ -331,6 +331,42 @@ export class AssetService {
     };
   }
 
+  async getStats() {
+    const [row] = await db.select({
+      total: sql<number>`count(*)`,
+      highRisk: sql<number>`count(*) filter (where risk_score >= 80)`,
+      totalThreats: sql<number>`coalesce(sum(active_threats), 0)`,
+      totalCVEs: sql<number>`coalesce(sum(unpatched_cves), 0)`,
+      avgRisk: sql<number>`coalesce(round(avg(risk_score)), 0)`,
+    }).from(assets);
+    return {
+      total: Number(row.total),
+      highRisk: Number(row.highRisk),
+      totalThreats: Number(row.totalThreats),
+      totalCVEs: Number(row.totalCVEs),
+      avgRisk: Number(row.avgRisk),
+    };
+  }
+
+  async exportAssets(filters: { type?: string; status?: string; search?: string }) {
+    const conditions: any[] = [];
+    if (filters.type) conditions.push(eq(assets.type, filters.type as any));
+    if (filters.status) conditions.push(eq(assets.status, filters.status as any));
+    if (filters.search) {
+      conditions.push(or(
+        ilike(assets.name, `%${filters.search}%`),
+        ilike(assets.ip, `%${filters.search}%`),
+        ilike(assets.hostname, `%${filters.search}%`),
+      )!);
+    }
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    return db.query.assets.findMany({
+      where: whereClause,
+      orderBy: [desc(assets.riskScore)],
+      limit: 10000,
+    });
+  }
+
   async scanAsset(id: string) {
     const asset = await this.getAssetById(id);
     const startedAt = new Date();

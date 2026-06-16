@@ -9,6 +9,8 @@ const router = Router();
 const upload = multer({ dest: 'uploads/' });
 
 router.get('/', authenticate, assetController.getAssets);
+router.get('/stats', authenticate, assetController.getStats);
+router.get('/export', authenticate, assetController.exportAssets);
 router.get('/risk-distribution', authenticate, assetController.getRiskDistribution);
 router.get('/priorities', authenticate, assetController.getExposurePriorities);
 router.post('/bootstrap-small-enterprise', authenticate, authorize('admin', 'analyst'), assetController.bootstrapSmallEnterprise);
