@@ -5,6 +5,7 @@ import { AssetCreateInput } from '../types';
 import { calculateRiskLevel } from '../utils/helpers';
 import logger from '../config/logger';
 import virusTotalService from './external/virustotal.service';
+import reconService from './recon.service';
 
 export class AssetService {
   private getIOCTypeCompatibility(assetType: string): Array<string> {
@@ -327,6 +328,64 @@ export class AssetService {
     return {
       assetsProcessed: allAssets.length,
       results,
+    };
+  }
+
+  async scanAsset(id: string) {
+    const asset = await this.getAssetById(id);
+    const startedAt = new Date();
+    const findings: Record<string, any> = {};
+    const errors: Record<string, string> = {};
+
+    // DNS on hostname
+    const dnsTarget = asset.hostname || asset.ip;
+    if (dnsTarget) {
+      try {
+        const dns = await reconService.dnsLookup(dnsTarget);
+        findings.dns = dns.result;
+      } catch (e: any) {
+        errors.dns = e.message;
+      }
+    }
+
+    // GeoIP on IP
+    if (asset.ip) {
+      try {
+        const geo = await reconService.geoipLookup(asset.ip);
+        findings.geoip = geo.result;
+      } catch (e: any) {
+        errors.geoip = e.message;
+      }
+    }
+
+    // SSL on external hostname only (skip .local / internal)
+    const hostname = asset.hostname || '';
+    const isExternal = hostname && !hostname.endsWith('.local') && !hostname.endsWith('.corp.local') && hostname.includes('.');
+    if (isExternal) {
+      try {
+        const ssl = await reconService.sslLookup(hostname);
+        findings.ssl = ssl.result;
+      } catch (e: any) {
+        errors.ssl = e.message;
+      }
+    }
+
+    const durationMs = Date.now() - startedAt.getTime();
+
+    await db.update(assets)
+      .set({ lastScan: startedAt, updatedAt: new Date() })
+      .where(eq(assets.id, id));
+
+    logger.info(`Asset scanned: ${asset.name} (${durationMs}ms)`);
+
+    return {
+      assetId: id,
+      assetName: asset.name,
+      scannedAt: startedAt.toISOString(),
+      durationMs,
+      findings,
+      errors,
+      checksRun: Object.keys(findings).length + Object.keys(errors).length,
     };
   }
 

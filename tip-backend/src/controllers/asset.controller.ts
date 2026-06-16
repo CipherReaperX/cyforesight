@@ -133,6 +133,16 @@ export class AssetController {
     }
   }
 
+  async scanAsset(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const result = await assetService.scanAsset(id);
+      sendSuccess(res, result, 'Asset scan completed');
+    } catch (error: any) {
+      sendError(res, error.message, 400);
+    }
+  }
+
   // === BULK ASSET CSV UPLOAD ENDPOINT ===
   async uploadCSV(req: AuthRequest, res: Response) {
     try {

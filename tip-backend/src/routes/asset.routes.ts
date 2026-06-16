@@ -13,6 +13,7 @@ router.get('/risk-distribution', authenticate, assetController.getRiskDistributi
 router.get('/priorities', authenticate, assetController.getExposurePriorities);
 router.post('/bootstrap-small-enterprise', authenticate, authorize('admin', 'analyst'), assetController.bootstrapSmallEnterprise);
 router.post('/map-iocs', authenticate, authorize('admin', 'analyst'), assetController.mapIOCsToAssets);
+router.post('/:id/scan', authenticate, authorize('admin', 'analyst'), assetController.scanAsset);
 router.post('/:id/recheck-vt', authenticate, authorize('admin', 'analyst'), assetController.recheckAssetIOCsVT);
 router.get('/:id/vulnerabilities', authenticate, assetController.getAssetVulnerabilities);
 router.get('/:id/threats', authenticate, assetController.getAssetThreats);

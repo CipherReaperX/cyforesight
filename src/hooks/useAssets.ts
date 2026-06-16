@@ -159,6 +159,24 @@ export function useExposurePriorities(limit: number = 25) {
   })
 }
 
+export function useScanAsset() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (assetId: string) => {
+      const { data } = await apiClient.post(`/assets/${assetId}/scan`)
+      return data.data
+    },
+    onSuccess: (_data, assetId) => {
+      queryClient.invalidateQueries({ queryKey: ['assets', assetId] })
+      queryClient.invalidateQueries({ queryKey: ['assets'] })
+      toast.success('Scan completed')
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || 'Scan failed')
+    },
+  })
+}
+
 export function useRecheckAssetIOCsVT() {
   const queryClient = useQueryClient()
   return useMutation({
