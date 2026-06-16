@@ -137,6 +137,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'geo-threats'] })
       queryClient.invalidateQueries({ queryKey: ['assets'] })
+      queryClient.invalidateQueries({ queryKey: ['mitre', 'coverage'] })
       toast.info(`${data.feedName}: +${data.count} new IOCs`, { duration: 3000 })
     })
 
@@ -145,6 +146,8 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       queryClient.invalidateQueries({ queryKey: ['assets'] })
       queryClient.invalidateQueries({ queryKey: ['threat-feeds'] })
       queryClient.invalidateQueries({ queryKey: ['iocs', 'anomalies'] })
+      queryClient.invalidateQueries({ queryKey: ['mitre', 'coverage'] })
+      queryClient.invalidateQueries({ queryKey: ['mitre', 'asset-correlation'] })
     })
 
     s.on('incident:created', () => {
