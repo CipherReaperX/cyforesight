@@ -147,6 +147,19 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       queryClient.invalidateQueries({ queryKey: ['iocs', 'anomalies'] })
     })
 
+    s.on('incident:created', () => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+    })
+
+    s.on('incident:updated', (data: { id: string }) => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      if (data?.id) queryClient.invalidateQueries({ queryKey: ['incidents', data.id] })
+    })
+
+    s.on('incident:deleted', () => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+    })
+
     s.on('dashboard:refresh', () => {
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     })

@@ -11,7 +11,10 @@ export type SocketEvent =
   | 'feed:synced'
   | 'feed:error'
   | 'notification:new'
-  | 'integration:update';
+  | 'integration:update'
+  | 'incident:created'
+  | 'incident:updated'
+  | 'incident:deleted';
 
 // ─── In-memory notification ring buffer ──────────────────────────────────────
 
