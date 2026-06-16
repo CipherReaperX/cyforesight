@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import db from '../config/database';
-import { iocs, threatDetections } from '../models/schema';
+import { assets, iocs, threatDetections } from '../models/schema';
 
 export class IncidentService {
   async listIncidents(status?: string, limit: number = 50) {
@@ -17,14 +17,43 @@ export class IncidentService {
       severity: r.severity,
       status: r.status,
       confidence: r.confidence || 0,
+      description: r.description || '',
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
       iocCount: Array.isArray(r.iocIds) ? r.iocIds.length : 0,
-      affectedAssets: Array.isArray(r.affectedAssets) ? r.affectedAssets.length : 0,
+      iocIds: Array.isArray(r.iocIds) ? r.iocIds : [],
+      assetCount: Array.isArray(r.affectedAssets) ? r.affectedAssets.length : 0,
+      affectedAssets: Array.isArray(r.affectedAssets) ? r.affectedAssets : [],
       techniqueCount: Array.isArray(r.techniqueIds) ? r.techniqueIds.length : 0,
       assignedTo: r.assignedTo,
       source: r.source,
     }));
+  }
+
+  async createIncident(input: {
+    name: string;
+    severity: string;
+    description?: string;
+    iocIds?: string[];
+    affectedAssets?: string[];
+  }) {
+    const [inserted] = await db
+      .insert(threatDetections)
+      .values({
+        name: input.name,
+        type: 'manual',
+        severity: input.severity as any,
+        confidence: 80,
+        iocIds: input.iocIds || [],
+        affectedAssets: input.affectedAssets || [],
+        techniqueIds: [],
+        source: 'manual',
+        description: input.description || '',
+        status: 'new',
+      })
+      .returning();
+
+    return inserted;
   }
 
   async bootstrapFromHighRiskIOCs(limit: number = 100) {
@@ -117,13 +146,41 @@ export class IncidentService {
             .limit(100)
         : [];
 
+    const assetIds = Array.isArray(incident.affectedAssets) ? incident.affectedAssets : [];
+    const relatedAssets =
+      assetIds.length > 0
+        ? await db
+            .select({
+              id: assets.id,
+              name: assets.name,
+              type: assets.type,
+              status: assets.status,
+              riskScore: assets.riskScore,
+            })
+            .from(assets)
+            .where(inArray(assets.id, assetIds as any))
+            .limit(50)
+        : [];
+
     return {
       incident,
       relatedIOCs,
+      relatedAssets,
     };
   }
 
-  async updateIncident(id: string, input: { status?: string; assignedTo?: string | null; note?: string }) {
+  async updateIncident(
+    id: string,
+    input: {
+      name?: string;
+      severity?: string;
+      status?: string;
+      assignedTo?: string | null;
+      note?: string;
+      iocIds?: string[];
+      affectedAssets?: string[];
+    }
+  ) {
     const existing = await db.query.threatDetections.findFirst({
       where: eq(threatDetections.id, id),
     });
@@ -135,8 +192,12 @@ export class IncidentService {
     const [updated] = await db
       .update(threatDetections)
       .set({
-        status: (input.status as any) || existing.status,
-        assignedTo: input.assignedTo === undefined ? existing.assignedTo : input.assignedTo,
+        ...(input.name !== undefined && { name: input.name }),
+        ...(input.severity !== undefined && { severity: input.severity as any }),
+        ...(input.status !== undefined && { status: input.status }),
+        ...(input.assignedTo !== undefined && { assignedTo: input.assignedTo as any }),
+        ...(input.iocIds !== undefined && { iocIds: input.iocIds }),
+        ...(input.affectedAssets !== undefined && { affectedAssets: input.affectedAssets }),
         description: descriptionParts.filter(Boolean).join('\n'),
         updatedAt: new Date(),
       })
@@ -146,20 +207,29 @@ export class IncidentService {
     return updated;
   }
 
+  async deleteIncident(id: string) {
+    const existing = await db.query.threatDetections.findFirst({
+      where: eq(threatDetections.id, id),
+    });
+    if (!existing) throw new Error('Incident not found');
+    await db.delete(threatDetections).where(eq(threatDetections.id, id));
+  }
+
   async getWorkbenchStats() {
-    const [newCount, inProgressCount, resolvedCount] = await Promise.all([
+    const [newCount, inProgressCount, resolvedCount, totalCount] = await Promise.all([
       db.select({ count: sql<number>`count(*)` }).from(threatDetections).where(eq(threatDetections.status, 'new')),
       db.select({ count: sql<number>`count(*)` }).from(threatDetections).where(eq(threatDetections.status, 'in_progress')),
       db.select({ count: sql<number>`count(*)` }).from(threatDetections).where(eq(threatDetections.status, 'resolved')),
+      db.select({ count: sql<number>`count(*)` }).from(threatDetections),
     ]);
 
     return {
       new: Number(newCount[0]?.count || 0),
       inProgress: Number(inProgressCount[0]?.count || 0),
       resolved: Number(resolvedCount[0]?.count || 0),
+      total: Number(totalCount[0]?.count || 0),
     };
   }
 }
 
 export default new IncidentService();
-

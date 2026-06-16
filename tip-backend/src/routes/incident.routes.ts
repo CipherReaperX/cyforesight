@@ -7,8 +7,9 @@ const router = Router();
 router.get('/', authenticate, incidentController.list);
 router.get('/stats', authenticate, incidentController.stats);
 router.post('/bootstrap', authenticate, authorize('admin', 'analyst'), incidentController.bootstrap);
+router.post('/', authenticate, authorize('admin', 'analyst'), incidentController.create);
 router.get('/:id', authenticate, incidentController.getById);
 router.patch('/:id', authenticate, authorize('admin', 'analyst'), incidentController.update);
+router.delete('/:id', authenticate, authorize('admin', 'analyst'), incidentController.delete);
 
 export default router;
-
