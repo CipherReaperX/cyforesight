@@ -114,6 +114,18 @@ async function seed() {
           healthScore: 90,
           enabled: true,
         },
+        {
+          name: 'Blocklist.de All IPs',
+          url: 'https://lists.blocklist.de/lists/all.txt',
+          type: 'csv',
+          status: 'active',
+          frequency: 'hourly',
+          lastFetch: new Date(),
+          iocsImported: 0,
+          totalIocs: 0,
+          healthScore: 100,
+          enabled: true,
+        },
       ]);
       console.log('✅ Threat feeds seeded');
     }

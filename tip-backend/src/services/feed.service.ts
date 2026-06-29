@@ -37,12 +37,17 @@ export class FeedService {
     if (type !== 'ip') return {};
     try {
       const g = geoipService.lookup(value);
-      if (g && g.ll && g.ll[0] !== 0) {
+      const lat = g?.ll?.[0];
+      const lng = g?.ll?.[1];
+      if (
+        typeof lat === 'number' && Number.isFinite(lat) && lat !== 0 &&
+        typeof lng === 'number' && Number.isFinite(lng)
+      ) {
         return {
-          geoLat: String(g.ll[0]),
-          geoLng: String(g.ll[1]),
-          geoCountry: g.country || undefined,
-          geoCity: g.city || undefined,
+          geoLat: String(lat),
+          geoLng: String(lng),
+          geoCountry: g?.country || undefined,
+          geoCity: g?.city || undefined,
         };
       }
     } catch { /* skip on any geoip error */ }
