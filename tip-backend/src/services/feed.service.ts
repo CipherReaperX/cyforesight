@@ -8,6 +8,7 @@ import { feedFetchQueue } from '../config/queue';
 import iocService from './ioc.service';
 import { emit, addNotification } from './socket.service';
 import { dispatchEvent } from './integration.service';
+import geoipService from '../engines/recon/geoip.service';
 
 export class FeedService {
   private detectIOCType(value: string): (typeof iocs.$inferInsert)['type'] | null {
@@ -28,6 +29,24 @@ export class FeedService {
       return severity;
     }
     return 'medium';
+  }
+
+  // Resolve geo fields for an IP IOC at insert time so the world map reads from
+  // persisted DB columns (geo_lat/geo_lng/geo_country) instead of recomputing.
+  private geoFields(type: string, value: string): Partial<typeof iocs.$inferInsert> {
+    if (type !== 'ip') return {};
+    try {
+      const g = geoipService.lookup(value);
+      if (g && g.ll && g.ll[0] !== 0) {
+        return {
+          geoLat: String(g.ll[0]),
+          geoLng: String(g.ll[1]),
+          geoCountry: g.country || undefined,
+          geoCity: g.city || undefined,
+        };
+      }
+    } catch { /* skip on any geoip error */ }
+    return {};
   }
 
   private async upsertFeedHealth(
@@ -106,6 +125,7 @@ export class FeedService {
             lastSeen: now,
             tags: Array.isArray(indicator?.tags) ? indicator.tags : [],
             description: indicator?.description || '',
+            ...this.geoFields(iocType, iocValue),
           });
         }
       }
@@ -148,6 +168,7 @@ export class FeedService {
             lastSeen: now,
             tags: ['imported'],
             description: '',
+            ...this.geoFields(iocType, iocValue),
           });
         }
       }
@@ -201,7 +222,11 @@ export class FeedService {
           { feedId: id, inserted: 0, parsed: toInsert.length }
         );
       }
-      emit('feed:synced', { feedId: id, feedName: feed.name, inserted, parsed: toInsert.length });
+      emit('feed:synced', {
+        feedId: id, feedName: feed.name, status: 'active',
+        iocsInserted: inserted, inserted, parsed: toInsert.length,
+        lastSyncAt: new Date().toISOString(),
+      });
       // Dispatch to enabled integrations (fire-and-forget, don't block feed sync response)
       dispatchEvent('feed_sync', {
         type: 'feed_sync',
@@ -227,6 +252,11 @@ export class FeedService {
         { feedId: id }
       );
       emit('feed:error', { feedId: id, feedName: feed?.name ?? id, error: error?.message });
+      emit('feed:synced', {
+        feedId: id, feedName: feed?.name ?? id, status: 'error',
+        iocsInserted: 0, inserted: 0, parsed: 0,
+        lastSyncAt: new Date().toISOString(), error: error?.message,
+      });
       dispatchEvent('feed_error', {
         type: 'feed_error',
         severity: 'high',

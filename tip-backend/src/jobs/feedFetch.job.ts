@@ -6,6 +6,19 @@ import { iocs, threatFeeds } from '../models/schema';
 import { eq, inArray } from 'drizzle-orm';
 import logger from '../config/logger';
 import redis from '../config/redis';
+import geoip from 'geoip-lite';
+import { emit } from '../services/socket.service';
+
+function geoFields(type: string, value: string): Partial<typeof iocs.$inferInsert> {
+  if (type !== 'ip') return {};
+  try {
+    const g = geoip.lookup(value);
+    if (g && g.ll && g.ll[0] !== 0) {
+      return { geoLat: String(g.ll[0]), geoLng: String(g.ll[1]), geoCountry: g.country || undefined, geoCity: g.city || undefined };
+    }
+  } catch { /* skip on geoip error */ }
+  return {};
+}
 
 export interface FeedFetchJobData {
   feedId: string;
@@ -75,6 +88,7 @@ export const feedFetchWorker = new Worker(
             lastSeen: now,
             tags: Array.isArray(indicator?.tags) ? indicator.tags : [],
             description: indicator?.description || '',
+            ...geoFields(iocType, iocValue),
           });
         }
       } else if (feedType === 'csv') {
@@ -108,6 +122,7 @@ export const feedFetchWorker = new Worker(
             lastSeen: now,
             tags: ['imported'],
             description: '',
+            ...geoFields(iocType, iocValue),
           });
         }
       }
@@ -131,11 +146,17 @@ export const feedFetchWorker = new Worker(
         inserted += result.length;
       }
 
+      const syncedAt = new Date();
       await db.update(threatFeeds)
-        .set({ lastFetch: new Date(), iocsImported: inserted, updatedAt: new Date() })
+        .set({ lastFetch: syncedAt, iocsImported: inserted, status: 'active', errorMessage: null, updatedAt: syncedAt })
         .where(eq(threatFeeds.id, feedId));
 
       logger.info(`✅ Fetched ${inserted} new IOCs from ${feedName} (${toInsert.length} parsed)`);
+
+      emit('feed:synced', {
+        feedId, feedName, status: 'active',
+        iocsInserted: inserted, lastSyncAt: syncedAt.toISOString(),
+      });
 
       return { success: true, inserted, parsed: toInsert.length };
 
@@ -151,6 +172,11 @@ export const feedFetchWorker = new Worker(
       }
 
       logger.error(`❌ Error fetching feed ${feedName}:`, error.message);
+      await db.update(threatFeeds)
+        .set({ status: 'error', errorMessage: error.message || 'Feed fetch failed', updatedAt: new Date() })
+        .where(eq(threatFeeds.id, feedId))
+        .catch(() => {/* ignore */});
+      emit('feed:synced', { feedId, feedName, status: 'error', iocsInserted: 0, lastSyncAt: new Date().toISOString(), error: error.message });
       throw error;
     }
   },

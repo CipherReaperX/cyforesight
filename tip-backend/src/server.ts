@@ -15,6 +15,8 @@ import db from './config/database';
 import redis from './config/redis';
 import { sql } from 'drizzle-orm';
 import { initSocketIO, shutdownSocketIO } from './services/socket.service';
+// Start BullMQ workers in-process so queued/scheduled feed jobs are actually consumed
+import './workers';
 
 const app = express();
 const PORT = process.env.PORT || 9999;

@@ -89,20 +89,73 @@ const huntAutomationJob = new CronJob('*/10 * * * *', async () => {
   }
 });
 
+// Map a feed.frequency string to a millisecond interval used for catch-up checks.
+function frequencyToMs(frequency: string | null | undefined): number {
+  switch ((frequency || 'hourly').toLowerCase()) {
+    case 'realtime':
+    case '5min':
+    case '5m': return 5 * 60 * 1000;
+    case '15min':
+    case '15m': return 15 * 60 * 1000;
+    case '30min':
+    case '30m': return 30 * 60 * 1000;
+    case 'hourly':
+    case '1h': return 60 * 60 * 1000;
+    case '6h': return 6 * 60 * 60 * 1000;
+    case '12h': return 12 * 60 * 60 * 1000;
+    case 'daily':
+    case '24h': return 24 * 60 * 60 * 1000;
+    default: return 60 * 60 * 1000;
+  }
+}
+
+// On startup: register each feed's job cadence and immediately queue a one-time
+// catch-up sync for any feed that has never synced or whose interval has elapsed.
+async function registerAndCatchUpFeeds() {
+  try {
+    const feeds = await db.select().from(threatFeeds);
+    const now = Date.now();
+    for (const feed of feeds) {
+      if (!feed.url || !feed.name) continue;
+      const intervalMs = frequencyToMs(feed.frequency);
+      const nextRun = new Date(now + intervalMs).toISOString();
+      logger.info(`📌 Registered job for feed: ${feed.name}, next run: ${nextRun}`);
+
+      if (!feed.enabled) continue;
+      const last = feed.lastFetch ? new Date(feed.lastFetch).getTime() : null;
+      const isDue = last === null || last + intervalMs < now;
+      if (isDue) {
+        await feedFetchQueue.add('fetch-feed', {
+          feedId: feed.id,
+          feedName: feed.name,
+          feedUrl: feed.url,
+          feedType: feed.type,
+        });
+        logger.info(`🔁 Catch-up sync queued for: ${feed.name}`);
+      }
+    }
+  } catch (error: any) {
+    logger.error('❌ Feed registration/catch-up error:', error.message);
+  }
+}
+
 export function startScheduler() {
   logger.info('⏰ Starting scheduler...');
-  
+
   feedFetchJob.start();
   enrichmentJob.start();
   scoringJob.start();
   huntAutomationJob.start();
-  
+
   logger.info('✅ Scheduler started - Jobs will run automatically');
   logger.info('📅 Feed Fetch: Every hour (on the hour)');
   logger.info('📅 Enrichment: Every 15 minutes');
   logger.info('📅 Threat Scoring: Every 30 minutes');
   logger.info('📅 Threat Hunting Automation: Every 10 minutes');
-  
+
+  // Auto-resume: register feed cadence + queue catch-up syncs for due feeds
+  void registerAndCatchUpFeeds();
+
   const runOnStartup = (process.env.SCHEDULER_RUN_ON_START || 'false').toLowerCase() === 'true';
   if (runOnStartup) {
     logger.info('🚀 Triggering initial jobs...');

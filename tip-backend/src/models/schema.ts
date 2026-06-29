@@ -44,6 +44,11 @@ export const iocs = pgTable('iocs', {
   mitreTechniques: text('mitre_techniques').array().default(sql`ARRAY[]::text[]`),
   affectedAssets: integer('affected_assets').default(0),
   description: text('description'),
+  // Geo-resolution fields (populated at insert time for IP and URL/domain IOCs)
+  geoLat: decimal('geo_lat', { precision: 9, scale: 6 }),
+  geoLng: decimal('geo_lng', { precision: 9, scale: 6 }),
+  geoCountry: varchar('geo_country', { length: 2 }),
+  geoCity: varchar('geo_city', { length: 100 }),
   firstSeen: timestamp('first_seen', { withTimezone: true }).defaultNow().notNull(),
   lastSeen: timestamp('last_seen', { withTimezone: true }).defaultNow().notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
