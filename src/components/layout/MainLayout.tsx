@@ -1,4 +1,4 @@
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation, Navigate } from 'react-router-dom'
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
@@ -44,6 +44,8 @@ export default function MainLayout() {
   const onOverlay = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) close()
   }
+
+  if (!localStorage.getItem('token')) return <Navigate to="/login" replace />
 
   return (
     <SocketProvider>

@@ -19,6 +19,9 @@ import { initSocketIO, shutdownSocketIO } from './services/socket.service';
 const app = express();
 const PORT = process.env.PORT || 9999;
 
+// Trust reverse proxy (nginx) so rate-limiting and IP detection work correctly
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet());
 
