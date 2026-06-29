@@ -330,6 +330,46 @@ export class DashboardService {
       if (cached) return cached;
     }
 
+    // Prefer persisted geo columns (populated at insert time) so the map reads
+    // straight from the DB and survives restarts without recomputation.
+    const storedRows = await db
+      .select({
+        countryCode: iocs.geoCountry,
+        lat: sql<number>`AVG(${iocs.geoLat})`,
+        lng: sql<number>`AVG(${iocs.geoLng})`,
+        count: sql<number>`count(*)`,
+        critical: sql<number>`count(*) FILTER (WHERE ${iocs.severity} = 'critical')`,
+        high: sql<number>`count(*) FILTER (WHERE ${iocs.severity} = 'high')`,
+        medium: sql<number>`count(*) FILTER (WHERE ${iocs.severity} = 'medium')`,
+        low: sql<number>`count(*) FILTER (WHERE ${iocs.severity} = 'low')`,
+        latestSeen: sql<string>`MAX(${iocs.lastSeen})`,
+      })
+      .from(iocs)
+      .where(and(eq(iocs.type, 'ip'), sql`${iocs.geoLat} IS NOT NULL`, sql`${iocs.geoCountry} IS NOT NULL`))
+      .groupBy(iocs.geoCountry);
+
+    if (storedRows.length > 0) {
+      const stored = storedRows
+        .filter((r) => r.countryCode)
+        .map((r) => ({
+          country: COUNTRY_NAMES[r.countryCode as string] || (r.countryCode as string),
+          countryCode: r.countryCode as string,
+          lat: Number(r.lat),
+          lng: Number(r.lng),
+          count: Number(r.count),
+          critical: Number(r.critical),
+          high: Number(r.high),
+          medium: Number(r.medium),
+          low: Number(r.low),
+          latestSeen: new Date(r.latestSeen).toISOString(),
+          sampleIPs: [] as string[],
+        }))
+        .sort((a, b) => b.count - a.count);
+      await cacheSet(cacheKey, stored, 300);
+      return stored;
+    }
+
+    // Fallback: compute geo on-the-fly for rows not yet backfilled.
     // Pull up to 2000 most-recent IP IOCs
     const ipIOCs = await db
       .select({ value: iocs.value, severity: iocs.severity, lastSeen: iocs.lastSeen })
