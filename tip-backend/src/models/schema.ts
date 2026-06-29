@@ -257,6 +257,36 @@ export const integrations = pgTable('integrations', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Platform settings — key/value store
+export const platformSettings = pgTable('platform_settings', {
+  key: varchar('key', { length: 128 }).primaryKey(),
+  value: text('value'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
+// API keys (encrypted/masked)
+export const apiKeys = pgTable('api_keys', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  service: varchar('service', { length: 64 }).notNull().unique(), // 'virustotal','abuseipdb','shodan','otx'
+  keyHash: text('key_hash'),      // bcrypt hash for verification
+  keyMasked: varchar('key_masked', { length: 32 }), // first 4 + **** + last 4
+  keyEncrypted: text('key_encrypted'), // AES-256 encrypted full key for actual use
+  isActive: boolean('is_active').default(true),
+  lastTestedAt: timestamp('last_tested_at', { withTimezone: true }),
+  lastTestStatus: varchar('last_test_status', { length: 16 }), // 'ok'|'fail'|null
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
+// Notification preferences
+export const notificationPrefs = pgTable('notification_prefs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  eventType: varchar('event_type', { length: 64 }).notNull(),
+  inApp: boolean('in_app').default(true),
+  email: boolean('email').default(false),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
 // Reports Table
 export const reports = pgTable('reports', {
   id: uuid('id').defaultRandom().primaryKey(),

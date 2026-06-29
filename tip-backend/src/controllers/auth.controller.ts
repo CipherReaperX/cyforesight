@@ -79,6 +79,40 @@ export class AuthController {
     }
   }
 
+  async deleteUser(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      if (req.user && req.user.userId === id) {
+        return sendError(res, 'You cannot delete your own account', 400);
+      }
+      await authService.deleteUser(id);
+      sendSuccess(res, null, 'User deleted successfully');
+    } catch (error: any) {
+      sendError(res, error.message, 400);
+    }
+  }
+
+  async resetUserPassword(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const { newPassword } = req.body;
+      if (!newPassword) return sendError(res, 'newPassword is required', 400);
+      await authService.resetPassword(id, newPassword);
+      sendSuccess(res, null, 'Password reset successfully');
+    } catch (error: any) {
+      sendError(res, error.message, 400);
+    }
+  }
+
+  async getLoginAudit(req: AuthRequest, res: Response) {
+    try {
+      const logins = await authService.getLoginAudit();
+      sendSuccess(res, logins);
+    } catch (error: any) {
+      sendError(res, error.message);
+    }
+  }
+
   async changePassword(req: AuthRequest, res: Response) {
     try {
       if (!req.user) {

@@ -151,6 +151,40 @@ export class AuthService {
     return user;
   }
 
+  async deleteUser(targetUserId: string) {
+    const existing = await db.query.users.findFirst({ where: eq(users.id, targetUserId) });
+    if (!existing) throw new Error('User not found');
+    await db.delete(users).where(eq(users.id, targetUserId));
+    logger.info(`User deleted: ${existing.username}`);
+  }
+
+  async resetPassword(targetUserId: string, newPassword: string) {
+    const existing = await db.query.users.findFirst({ where: eq(users.id, targetUserId) });
+    if (!existing) throw new Error('User not found');
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await db.update(users)
+      .set({ passwordHash, failedLoginAttempts: 0, lockedUntil: null, updatedAt: new Date() })
+      .where(eq(users.id, targetUserId));
+    logger.info(`Password reset by admin for user: ${existing.username}`);
+  }
+
+  async getLoginAudit() {
+    const rows = await db.query.users.findMany({
+      columns: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        lastLogin: true,
+        isActive: true,
+        failedLoginAttempts: true,
+      },
+      orderBy: [desc(users.lastLogin)],
+      limit: 20,
+    });
+    return rows;
+  }
+
   async changePassword(userId: string, currentPassword: string, newPassword: string) {
     const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
     if (!user) throw new Error('User not found');
