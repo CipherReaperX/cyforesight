@@ -44,8 +44,15 @@ export function useIntegrations() {
         old?.map(i => i.id === updated.id ? { ...i, ...updated } : i) ?? [updated]
       )
     }
+    const onTested = () => {
+      queryClient.invalidateQueries({ queryKey: ['integrations'] })
+    }
     socket.on('integration:update', onUpdate)
-    return () => { socket.off('integration:update', onUpdate) }
+    socket.on('integration:tested', onTested)
+    return () => {
+      socket.off('integration:update', onUpdate)
+      socket.off('integration:tested', onTested)
+    }
   }, [socket, queryClient])
 
   return useQuery<Integration[]>({

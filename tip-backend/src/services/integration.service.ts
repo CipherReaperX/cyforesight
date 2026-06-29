@@ -33,8 +33,10 @@ export interface IntegrationConfig {
 
 export interface TestResult {
   success: boolean;
+  status: 'active' | 'error' | 'not_configured';
   message: string;
   detail?: unknown;
+  httpStatus?: number;
   durationMs: number;
 }
 
@@ -70,6 +72,65 @@ function severityHex(severity?: string): string {
   if (severity === 'critical') return 'FF0000';
   if (severity === 'high')     return 'FF6600';
   return '3B82F6';
+}
+
+// Treat empty / obvious placeholder hostnames & urls as "not configured"
+function isPlaceholder(v?: string): boolean {
+  if (!v || !v.trim()) return true;
+  return /(^|[.@/])example\.(com|org|net)|your-?(server|host|domain)|changeme|placeholder|smtp\.example/i.test(v);
+}
+
+// ─── Sensitive-value masking ────────────────────────────────────────────────────
+
+const SENSITIVE_KEYS = ['webhookUrl', 'url', 'smtpPass', 'apiKey'];
+
+function maskValue(v: string): string {
+  if (!v) return v;
+  if (v.length <= 8) return '****';
+  return `${v.slice(0, 4)}****${v.slice(-4)}`;
+}
+
+export function maskConfig(config: unknown): Record<string, unknown> {
+  if (!config || typeof config !== 'object') return (config as Record<string, unknown>) ?? {};
+  const out: Record<string, unknown> = { ...(config as Record<string, unknown>) };
+  for (const k of SENSITIVE_KEYS) {
+    if (typeof out[k] === 'string' && out[k]) out[k] = maskValue(out[k] as string);
+  }
+  return out;
+}
+
+export function maskRow<T extends { config?: unknown }>(row: T): T {
+  if (!row) return row;
+  return { ...row, config: maskConfig(row.config) };
+}
+
+// ─── Test-result builders ───────────────────────────────────────────────────────
+
+function notConfigured(label: string): TestResult {
+  return {
+    success: false,
+    status: 'not_configured',
+    message: `${label} not configured — add credentials in Configure`,
+    durationMs: 0,
+  };
+}
+
+function failed(label: string, e: any, durationMs: number): TestResult {
+  const httpStatus = e?.response?.status as number | undefined;
+  const providerMsg = e?.response?.data
+    ? (typeof e.response.data === 'string' ? e.response.data : JSON.stringify(e.response.data))
+    : '';
+  let message: string;
+  if (httpStatus) {
+    message = `${label} returned ${httpStatus}${providerMsg ? `: ${providerMsg.slice(0, 200)}` : ''}`;
+  } else {
+    // Network/transport error (DNS, TLS, connection reset/refused, timeout) — no HTTP response.
+    const raw = (e?.message && e.message !== 'Error') ? e.message : '';
+    const code = e?.code ? `${e.code}` : '';
+    const detail = [raw, code].filter(Boolean).join(' ');
+    message = `${label} delivery failed${detail ? `: ${detail}` : ' (no response from server)'}`;
+  }
+  return { success: false, status: 'error', message, httpStatus, durationMs };
 }
 
 function slackBlocks(payload: EventPayload) {
@@ -110,17 +171,27 @@ function teamsCard(payload: EventPayload) {
 }
 
 function discordEmbed(payload: EventPayload) {
+  // Discord webhook spec: color must be a decimal integer; every field value must be a
+  // non-empty string; embeds array max 10; content (if present) max 2000 chars.
+  const fields: Array<{ name: string; value: string; inline: boolean }> = [
+    { name: 'Event', value: String(payload.type || 'event'), inline: true },
+  ];
+  if (payload.severity) {
+    fields.push({ name: 'Severity', value: String(payload.severity), inline: true });
+  }
+
+  const embed = {
+    title: `CyForesight: ${payload.title}`.slice(0, 256),
+    description: (payload.body && payload.body.trim() ? payload.body : '—').slice(0, 4096),
+    color: severityColor(payload.severity), // decimal int, e.g. 16711680
+    timestamp: new Date().toISOString(),
+    footer: { text: 'CyForesight' },
+    fields,
+  };
+
   return {
-    embeds: [
-      {
-        title: `CyForesight: ${payload.title}`,
-        description: payload.body,
-        color: severityColor(payload.severity),
-        timestamp: new Date().toISOString(),
-        footer: { text: `CyForesight TIP · ${payload.type}` },
-        fields: payload.severity ? [{ name: 'Severity', value: payload.severity, inline: true }] : [],
-      },
-    ],
+    content: `CyForesight: ${payload.title}`.slice(0, 2000),
+    embeds: [embed].slice(0, 10),
   };
 }
 
@@ -133,14 +204,14 @@ async function runSlack(config: IntegrationConfig, payload: EventPayload): Promi
 
 async function testSlack(config: IntegrationConfig): Promise<TestResult> {
   const t0 = Date.now();
-  if (!config.webhookUrl) return { success: false, message: 'Webhook URL not configured', durationMs: 0 };
+  if (!config.webhookUrl) return notConfigured('Slack');
   try {
     await runSlack(config, {
       type: 'test', title: 'Test alert', body: '✅ CyForesight Slack integration is working correctly.',
     });
-    return { success: true, message: 'Slack message delivered successfully', durationMs: Date.now() - t0 };
+    return { success: true, status: 'active', message: 'Slack message delivered successfully', durationMs: Date.now() - t0 };
   } catch (e: any) {
-    return { success: false, message: e?.message || 'Slack delivery failed', durationMs: Date.now() - t0 };
+    return failed('Slack', e, Date.now() - t0);
   }
 }
 
@@ -151,12 +222,12 @@ async function runTeams(config: IntegrationConfig, payload: EventPayload): Promi
 
 async function testTeams(config: IntegrationConfig): Promise<TestResult> {
   const t0 = Date.now();
-  if (!config.webhookUrl) return { success: false, message: 'Webhook URL not configured', durationMs: 0 };
+  if (!config.webhookUrl) return notConfigured('Teams');
   try {
     await runTeams(config, { type: 'test', title: 'Test alert', body: '✅ CyForesight Teams integration is working correctly.' });
-    return { success: true, message: 'Teams card delivered successfully', durationMs: Date.now() - t0 };
+    return { success: true, status: 'active', message: 'Teams card delivered successfully', durationMs: Date.now() - t0 };
   } catch (e: any) {
-    return { success: false, message: e?.message || 'Teams delivery failed', durationMs: Date.now() - t0 };
+    return failed('Teams', e, Date.now() - t0);
   }
 }
 
@@ -167,12 +238,12 @@ async function runDiscord(config: IntegrationConfig, payload: EventPayload): Pro
 
 async function testDiscord(config: IntegrationConfig): Promise<TestResult> {
   const t0 = Date.now();
-  if (!config.webhookUrl) return { success: false, message: 'Webhook URL not configured', durationMs: 0 };
+  if (!config.webhookUrl) return notConfigured('Discord');
   try {
     await runDiscord(config, { type: 'test', title: 'Test alert', body: '✅ CyForesight Discord integration is working correctly.' });
-    return { success: true, message: 'Discord embed delivered successfully', durationMs: Date.now() - t0 };
+    return { success: true, status: 'active', message: 'Discord embed delivered successfully', durationMs: Date.now() - t0 };
   } catch (e: any) {
-    return { success: false, message: e?.message || 'Discord delivery failed', durationMs: Date.now() - t0 };
+    return failed('Discord', e, Date.now() - t0);
   }
 }
 
@@ -190,7 +261,7 @@ async function runWebhook(config: IntegrationConfig, payload: EventPayload): Pro
 
 async function testWebhook(config: IntegrationConfig): Promise<TestResult> {
   const t0 = Date.now();
-  if (!config.url) return { success: false, message: 'Webhook URL not configured', durationMs: 0 };
+  if (isPlaceholder(config.url)) return notConfigured('Webhook');
   try {
     const res = await axios.request({
       url: config.url,
@@ -203,12 +274,14 @@ async function testWebhook(config: IntegrationConfig): Promise<TestResult> {
     const ok = res.status >= 200 && res.status < 300;
     return {
       success: ok,
-      message: ok ? `HTTP ${res.status} — webhook delivered` : `HTTP ${res.status} — server returned error`,
+      status: ok ? 'active' : 'error',
+      message: ok ? `HTTP ${res.status} — webhook delivered` : `Webhook returned ${res.status} — server returned error`,
       detail: { status: res.status },
+      httpStatus: ok ? undefined : res.status,
       durationMs: Date.now() - t0,
     };
   } catch (e: any) {
-    return { success: false, message: e?.message || 'Webhook failed', durationMs: Date.now() - t0 };
+    return failed('Webhook', e, Date.now() - t0);
   }
 }
 
@@ -237,19 +310,19 @@ async function runEmail(config: IntegrationConfig, payload: EventPayload): Promi
 
 async function testEmail(config: IntegrationConfig): Promise<TestResult> {
   const t0 = Date.now();
-  if (!config.smtpHost || !config.smtpTo) return { success: false, message: 'SMTP host and recipient required', durationMs: 0 };
+  if (isPlaceholder(config.smtpHost) || !config.smtpTo) return notConfigured('Email (SMTP)');
   try {
     await runEmail(config, { type: 'test', title: 'CyForesight test email', body: 'SMTP integration is working correctly.' });
-    return { success: true, message: `Test email sent to ${config.smtpTo}`, durationMs: Date.now() - t0 };
+    return { success: true, status: 'active', message: `Test email sent to ${config.smtpTo}`, durationMs: Date.now() - t0 };
   } catch (e: any) {
-    return { success: false, message: e?.message || 'Email delivery failed', durationMs: Date.now() - t0 };
+    return failed('Email', e, Date.now() - t0);
   }
 }
 
 async function testVirusTotal(config: IntegrationConfig): Promise<TestResult> {
   const t0 = Date.now();
   const key = config.apiKey || process.env.VIRUSTOTAL_API_KEY || '';
-  if (!key) return { success: false, message: 'VirusTotal API key not configured', durationMs: 0 };
+  if (!key) return notConfigured('VirusTotal');
   try {
     // Test with EICAR hash — always present in VT, safe to look up
     const res = await axios.get(
@@ -259,15 +332,16 @@ async function testVirusTotal(config: IntegrationConfig): Promise<TestResult> {
     const stats = res.data?.data?.attributes?.last_analysis_stats;
     return {
       success: true,
+      status: 'active',
       message: `API key valid — EICAR: ${stats?.malicious ?? '?'} engines detect as malicious`,
       detail: stats,
       durationMs: Date.now() - t0,
     };
   } catch (e: any) {
     const status = e?.response?.status;
-    if (status === 403) return { success: false, message: 'Invalid or expired API key (HTTP 403)', durationMs: Date.now() - t0 };
-    if (status === 429) return { success: false, message: 'Rate limit exceeded — try again later', durationMs: Date.now() - t0 };
-    return { success: false, message: e?.message || 'VirusTotal API error', durationMs: Date.now() - t0 };
+    if (status === 403) return { success: false, status: 'error', message: 'Invalid or expired API key (HTTP 403)', httpStatus: 403, durationMs: Date.now() - t0 };
+    if (status === 429) return { success: false, status: 'error', message: 'Rate limit exceeded — try again later', httpStatus: 429, durationMs: Date.now() - t0 };
+    return failed('VirusTotal', e, Date.now() - t0);
   }
 }
 
@@ -309,7 +383,14 @@ export async function getById(id: string) {
 
 export async function updateConfig(id: string, config: IntegrationConfig) {
   const row = await getById(id);
-  const merged = { ...(row.config as object), ...config };
+  // Drop masked sensitive values so we never overwrite real creds with the "****" display value
+  const incoming: Record<string, unknown> = { ...(config as Record<string, unknown>) };
+  for (const k of SENSITIVE_KEYS) {
+    if (typeof incoming[k] === 'string' && (incoming[k] as string).includes('****')) {
+      delete incoming[k];
+    }
+  }
+  const merged = { ...(row.config as object), ...incoming };
   const isConfigured = isIntegrationConfigured(row.type as IntegrationType, merged as IntegrationConfig);
   const [updated] = await db.update(integrations)
     .set({ config: merged, status: isConfigured ? 'configured' : 'not_configured', updatedAt: new Date() })
@@ -341,13 +422,18 @@ export async function testIntegration(id: string): Promise<TestResult & { integr
       case 'webhook':    result = await testWebhook(config);     break;
       case 'email':      result = await testEmail(config);       break;
       case 'virustotal': result = await testVirusTotal(config);  break;
-      default: result = { success: false, message: `Unknown type: ${row.type}`, durationMs: 0 };
+      default: result = { success: false, status: 'error', message: `Unknown type: ${row.type}`, durationMs: 0 };
     }
   } catch (e: any) {
-    result = { success: false, message: e?.message || 'Test failed', durationMs: 0 };
+    result = { success: false, status: 'error', message: e?.message || 'Test failed', durationMs: 0 };
   }
 
-  const newStatus = result.success ? 'connected' : 'error';
+  // DB status: success -> connected, not_configured -> not_configured, otherwise error
+  const newStatus =
+    result.status === 'not_configured' ? 'not_configured'
+    : result.success ? 'connected'
+    : 'error';
+
   const [updated] = await db.update(integrations)
     .set({
       status: newStatus,
@@ -357,7 +443,14 @@ export async function testIntegration(id: string): Promise<TestResult & { integr
     })
     .where(eq(integrations.id, id))
     .returning();
+
   emit('integration:update', updated);
+  emit('integration:tested', {
+    integrationId: id,
+    status: newStatus === 'connected' ? 'active' : newStatus, // 'active' | 'error' | 'not_configured'
+    lastResult: result.message,
+    lastUsed: new Date().toISOString(),
+  });
   return { ...result, integration: updated };
 }
 
@@ -397,8 +490,8 @@ function isIntegrationConfigured(type: IntegrationType, config: IntegrationConfi
     case 'slack':
     case 'teams':
     case 'discord':    return !!config.webhookUrl;
-    case 'webhook':    return !!config.url;
-    case 'email':      return !!(config.smtpHost && config.smtpTo);
+    case 'webhook':    return !isPlaceholder(config.url);
+    case 'email':      return !!(config.smtpHost && !isPlaceholder(config.smtpHost) && config.smtpTo);
     case 'virustotal': return !!(config.apiKey || process.env.VIRUSTOTAL_API_KEY);
     default: return false;
   }

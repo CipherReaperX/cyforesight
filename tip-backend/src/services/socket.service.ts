@@ -12,6 +12,7 @@ export type SocketEvent =
   | 'feed:error'
   | 'notification:new'
   | 'integration:update'
+  | 'integration:tested'
   | 'incident:created'
   | 'incident:updated'
   | 'incident:deleted';
