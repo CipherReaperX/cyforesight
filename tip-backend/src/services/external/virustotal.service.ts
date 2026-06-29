@@ -1,23 +1,25 @@
 import axios from 'axios';
 import logger from '../../config/logger';
+import settingsService from '../settings.service';
 
 export class VirusTotalService {
-  private apiKey: string;
   private baseUrl = 'https://www.virustotal.com/api/v3';
 
-  constructor() {
-    this.apiKey = process.env.VIRUSTOTAL_API_KEY || '';
+  // Reads the key from the api_keys table (decrypted), falling back to env.
+  private async getKey(): Promise<string> {
+    return (await settingsService.getApiKey('virustotal')) || '';
   }
 
   async lookupIP(ip: string) {
-    if (!this.apiKey) {
+    const apiKey = await this.getKey();
+    if (!apiKey) {
       logger.warn('VirusTotal API key not configured');
       return null;
     }
 
     try {
       const response = await axios.get(`${this.baseUrl}/ip_addresses/${ip}`, {
-        headers: { 'x-apikey': this.apiKey },
+        headers: { 'x-apikey': apiKey },
         timeout: 10000,
       });
 
@@ -34,11 +36,12 @@ export class VirusTotalService {
   }
 
   async lookupDomain(domain: string) {
-    if (!this.apiKey) return null;
+    const apiKey = await this.getKey();
+    if (!apiKey) return null;
 
     try {
       const response = await axios.get(`${this.baseUrl}/domains/${domain}`, {
-        headers: { 'x-apikey': this.apiKey },
+        headers: { 'x-apikey': apiKey },
         timeout: 10000,
       });
 
@@ -54,11 +57,12 @@ export class VirusTotalService {
   }
 
   async lookupHash(hash: string) {
-    if (!this.apiKey) return null;
+    const apiKey = await this.getKey();
+    if (!apiKey) return null;
 
     try {
       const response = await axios.get(`${this.baseUrl}/files/${hash}`, {
-        headers: { 'x-apikey': this.apiKey },
+        headers: { 'x-apikey': apiKey },
         timeout: 10000,
       });
 
@@ -76,12 +80,13 @@ export class VirusTotalService {
   }
 
   async lookupURL(url: string) {
-    if (!this.apiKey) return null;
+    const apiKey = await this.getKey();
+    if (!apiKey) return null;
 
     try {
       const urlId = Buffer.from(url).toString('base64').replace(/=/g, '');
       const response = await axios.get(`${this.baseUrl}/urls/${urlId}`, {
-        headers: { 'x-apikey': this.apiKey },
+        headers: { 'x-apikey': apiKey },
         timeout: 10000,
       });
 

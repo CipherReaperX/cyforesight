@@ -1,16 +1,13 @@
 import axios from 'axios';
 import logger from '../../config/logger';
+import settingsService from '../settings.service';
 
 export class AbuseIPDBService {
-  private apiKey: string;
   private baseUrl = 'https://api.abuseipdb.com/api/v2';
 
-  constructor() {
-    this.apiKey = process.env.ABUSEIPDB_API_KEY || '';
-  }
-
   async check(ip: string) {
-    if (!this.apiKey) {
+    const apiKey = (await settingsService.getApiKey('abuseipdb')) || '';
+    if (!apiKey) {
       logger.warn('AbuseIPDB API key not configured');
       return null;
     }
@@ -18,7 +15,7 @@ export class AbuseIPDBService {
     try {
       const response = await axios.get(`${this.baseUrl}/check`, {
         params: { ipAddress: ip, maxAgeInDays: 90 },
-        headers: { 'Key': this.apiKey },
+        headers: { 'Key': apiKey },
         timeout: 10000,
       });
 
