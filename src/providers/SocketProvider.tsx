@@ -167,6 +167,10 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     })
 
+    s.on('integration:tested', () => {
+      queryClient.invalidateQueries({ queryKey: ['integrations'] })
+    })
+
     // Single source of truth for notification state — handled here, not in useNotifications
     s.on('notification:init', (payload: { items: AppNotification[]; unread: number }) => {
       setCtxValue(v => ({ ...v, notifications: payload.items, unreadCount: payload.unread }))

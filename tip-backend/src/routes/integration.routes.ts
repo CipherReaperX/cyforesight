@@ -7,6 +7,7 @@ const router = Router();
 router.get('/', authenticate, integrationController.list);
 router.get('/:id', authenticate, integrationController.getOne);
 router.patch('/:id/config', authenticate, authorize('admin'), integrationController.updateConfig);
+router.patch('/:id', authenticate, authorize('admin'), integrationController.updateConfig);
 router.post('/:id/enable', authenticate, authorize('admin'), integrationController.enable);
 router.post('/:id/disable', authenticate, authorize('admin'), integrationController.disable);
 router.post('/:id/test', authenticate, authorize('admin', 'analyst'), integrationController.test);

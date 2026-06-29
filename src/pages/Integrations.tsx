@@ -85,13 +85,17 @@ interface ConfigField {
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: Integration['status'] }) {
+  // Active (green) — last test/send succeeded
   if (status === 'connected')
-    return <Badge variant="success"><Check className="mr-1 h-3 w-3" />Connected</Badge>
+    return <Badge variant="success"><Check className="mr-1 h-3 w-3" />Active</Badge>
+  // Failed (red) — configured but delivery failed
   if (status === 'error')
-    return <Badge variant="danger"><AlertCircle className="mr-1 h-3 w-3" />Error</Badge>
+    return <Badge variant="danger"><AlertCircle className="mr-1 h-3 w-3" />Failed</Badge>
+  // Configured (neutral) — creds saved, not yet tested
   if (status === 'configured')
-    return <Badge variant="warning"><Plug className="mr-1 h-3 w-3" />Configured</Badge>
-  return <Badge variant="default"><WifiOff className="mr-1 h-3 w-3" />Not configured</Badge>
+    return <Badge variant="default"><Plug className="mr-1 h-3 w-3" />Configured</Badge>
+  // Not Configured (amber) — credentials missing
+  return <Badge variant="warning"><WifiOff className="mr-1 h-3 w-3" />Not Configured</Badge>
 }
 
 // ─── Individual integration card ──────────────────────────────────────────────
@@ -146,6 +150,7 @@ function IntegrationCard({ integration }: { integration: Integration }) {
       const { data } = await api.post(`/integrations/${integration.id}/test`)
       const res = data?.data
       if (res?.success) toast.success(`Test passed (${res.durationMs}ms): ${res.message}`)
+      else if (res?.status === 'not_configured') toast.warning(res?.message ?? 'Integration not configured')
       else toast.error(`Test failed: ${res?.message ?? 'Unknown error'}`)
       queryClient.invalidateQueries({ queryKey: ['integrations'] })
     } catch (e: any) {
@@ -192,6 +197,14 @@ function IntegrationCard({ integration }: { integration: Integration }) {
             <div className={`col-span-2 rounded px-2 py-1 ${lastResult.success ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
               {lastResult.success ? '✓' : '✗'} {lastResult.message ?? (lastResult.error ?? '')}
             </div>
+          )}
+          {integration.status === 'not_configured' && (
+            <button
+              onClick={() => { if (!expanded) handleExpand() }}
+              className="col-span-2 text-left text-amber-400 hover:text-amber-300 font-medium"
+            >
+              Add credentials →
+            </button>
           )}
         </div>
 
