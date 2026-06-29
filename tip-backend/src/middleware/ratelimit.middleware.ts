@@ -1,16 +1,18 @@
 import rateLimit from 'express-rate-limit';
 
 export const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 500,
   message: 'Too many requests from this IP, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
 });
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5, // 5 login attempts per 15 minutes
+  max: 20,
   message: 'Too many login attempts, please try again later',
   skipSuccessfulRequests: true,
+  validate: { xForwardedForHeader: false },
 });
