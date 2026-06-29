@@ -93,19 +93,24 @@ export function initSocketIO(httpServer: HTTPServer): SocketIOServer {
     const token =
       (socket.handshake.auth as any)?.token ||
       (socket.handshake.query?.token as string);
-    if (!token) return next(new Error('unauthorized: no token'));
+    if (!token) {
+      logger.warn(`Socket auth failed: no token (handshake ${socket.id})`);
+      return next(new Error('unauthorized: no token'));
+    }
     try {
-      const payload = jwt.verify(token, process.env.JWT_SECRET || 'changeme');
+      const payload = jwt.verify(token, process.env.JWT_SECRET || 'changeme') as any;
       (socket.data as any).user = payload;
+      (socket.data as any).userId = payload?.userId || payload?.id || payload?.sub;
       next();
-    } catch {
+    } catch (err: any) {
+      logger.warn(`Socket auth failed: ${err?.message || 'invalid token'}`);
       next(new Error('unauthorized: invalid token'));
     }
   });
 
   io.on('connection', (socket: Socket) => {
     const user = (socket.data as any).user;
-    logger.info(`Socket connected: ${socket.id} (${user?.username || '?'})`);
+    logger.info(`Socket connected: ${socket.id} user: ${(socket.data as any).userId || user?.username || '?'}`);
 
     socket.on('disconnect', (reason) => {
       logger.info(`Socket disconnected: ${socket.id} — ${reason}`);

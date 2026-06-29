@@ -13,8 +13,13 @@ function geoFields(type: string, value: string): Partial<typeof iocs.$inferInser
   if (type !== 'ip') return {};
   try {
     const g = geoip.lookup(value);
-    if (g && g.ll && g.ll[0] !== 0) {
-      return { geoLat: String(g.ll[0]), geoLng: String(g.ll[1]), geoCountry: g.country || undefined, geoCity: g.city || undefined };
+    const lat = g?.ll?.[0];
+    const lng = g?.ll?.[1];
+    if (
+      typeof lat === 'number' && Number.isFinite(lat) && lat !== 0 &&
+      typeof lng === 'number' && Number.isFinite(lng)
+    ) {
+      return { geoLat: String(lat), geoLng: String(lng), geoCountry: g?.country || undefined, geoCity: g?.city || undefined };
     }
   } catch { /* skip on geoip error */ }
   return {};
