@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, memo } from 'react'
 import { Bell, LogOut, Menu, RefreshCw, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useQueryClient } from '@tanstack/react-query'
@@ -7,6 +7,19 @@ import { useSocketCtx } from '@/providers/SocketProvider'
 import { useNotifications } from '@/hooks/useNotifications'
 import { NotificationPanel } from '@/components/NotificationPanel'
 import api from '@/lib/api'
+
+// Isolated component so its 30-second tick re-renders only this element,
+// not the full TopBar (which holds socket context and query client refs).
+const LastUpdatedLabel = memo(function LastUpdatedLabel({ since }: { since: Date }) {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30000)
+    return () => clearInterval(id)
+  }, [])
+  const elapsed = Math.floor((Date.now() - since.getTime()) / 1000)
+  const label = elapsed < 10 ? 'just now' : elapsed < 60 ? `${elapsed}s ago` : `${Math.floor(elapsed / 60)}m ago`
+  return <span>Updated {label}</span>
+})
 
 function decodeJWTUser(): { username: string; role: string } | null {
   try {
@@ -32,32 +45,24 @@ export default function TopBar() {
   const [user] = useState(decodeJWTUser)
   const [lastUpdate, setLastUpdate] = useState(new Date())
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [tick, setTick] = useState(0)
   const [bellOpen, setBellOpen] = useState(false)
   const bellRef = useRef<HTMLButtonElement>(null)
   const { unread } = useNotifications()
-
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 30000)
-    return () => clearInterval(id)
-  }, [])
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
     try { await api.post('/dashboard/invalidate-cache') } catch { /* ignore */ }
     await queryClient.invalidateQueries()
     setLastUpdate(new Date())
-    setTimeout(() => setIsRefreshing(false), 800)
+    setIsRefreshing(false)
   }
 
   const handleLogout = () => {
     localStorage.removeItem('token')
+    localStorage.removeItem('refreshToken')
     localStorage.removeItem('user')
     window.location.href = '/login'
   }
-
-  const elapsed = Math.floor((Date.now() - lastUpdate.getTime()) / 1000)
-  const lastUpdateLabel = elapsed < 10 ? 'just now' : elapsed < 60 ? `${elapsed}s ago` : `${Math.floor(elapsed / 60)}m ago`
 
   return (
     <div className="flex h-16 items-center justify-between border-b border-[#1f2d3d] bg-[#0f1724]/90 px-4 backdrop-blur md:px-6">
@@ -97,10 +102,9 @@ export default function TopBar() {
       </div>
 
       <div className="flex items-center space-x-3">
-        {/* Last updated */}
+        {/* Last updated — isolated component so only it re-renders on the 30s tick */}
         <div className="rounded-md border border-[#1f2d3d] bg-[#0a1220] px-2.5 py-1 text-xs text-slate-400">
-          {/* tick forces re-render for the elapsed label */}
-          {tick >= 0 && `Updated ${lastUpdateLabel}`}
+          <LastUpdatedLabel since={lastUpdate} />
         </div>
 
         {/* Refresh all queries */}

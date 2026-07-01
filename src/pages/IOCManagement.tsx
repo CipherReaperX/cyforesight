@@ -65,13 +65,7 @@ export default function IOCManagement() {
   const mapSeverityToBadge = (severity: string): BadgeVariant =>
     severity === 'info' ? 'default' : (severity as BadgeVariant)
 
-  // Real-time polling every 60 seconds to show new feeds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (refetch) refetch()
-    }, 60000) // 60 seconds
-    return () => clearInterval(interval)
-  }, [refetch])
+  // IOC list auto-refreshes via socket feed:synced / ioc:new events (SocketProvider).
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {

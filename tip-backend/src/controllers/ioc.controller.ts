@@ -226,6 +226,16 @@ export class IOCController {
     }
   }
 
+  async getEnrichment(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const enrichment = await iocService.getEnrichment(id);
+      sendSuccess(res, enrichment);
+    } catch (error: any) {
+      sendError(res, error.message, error.message.includes('not found') ? 404 : 500);
+    }
+  }
+
   async getAnomalies(_req: AuthRequest, res: Response) {
     try {
       const result = await iocService.getAnomalies();

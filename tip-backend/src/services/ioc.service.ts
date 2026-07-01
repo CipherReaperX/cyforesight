@@ -7,6 +7,10 @@ import { validateIOCFormat } from '../utils/helpers';
 import { cacheGet, cacheSet, cacheDelByPrefixes, generateCacheKey } from '../utils/cache';
 import logger from '../config/logger';
 import { extractThreatActorsFromIOC } from '../utils/threat-intel';
+import virusTotalService from './external/virustotal.service';
+import abuseIPDBService from './external/abuseipdb.service';
+import reconService from './recon.service';
+import geoipService from '../engines/recon/geoip.service';
 
 export class IOCService {
   private buildSyntheticIOCPool() {
@@ -384,6 +388,90 @@ export class IOCService {
     return scored;
   }
 
+  async getEnrichment(id: string) {
+    const ioc = await this.getIOCById(id);
+    const enrichment: Record<string, any> = {};
+
+    // GeoIP — use stored geo data first, then live lookup
+    if (ioc.type === 'ip') {
+      if (ioc.geoLat && ioc.geoLng) {
+        enrichment.geo = {
+          country: ioc.geoCountry || 'Unknown',
+          city: ioc.geoCity || 'Unknown',
+          lat: Number(ioc.geoLat),
+          lon: Number(ioc.geoLng),
+        };
+      } else {
+        try {
+          const geo = geoipService.lookup(ioc.value);
+          if (geo) {
+            enrichment.geo = {
+              country: geo.country,
+              city: geo.city || 'Unknown',
+              lat: geo.latitude,
+              lon: geo.longitude,
+            };
+          }
+        } catch { /* geoip unavailable */ }
+      }
+
+      // AbuseIPDB (silently skipped if no API key)
+      try {
+        const abuse = await abuseIPDBService.check(ioc.value);
+        if (abuse) {
+          enrichment.abuseIPDB = {
+            abuseConfidence: abuse.abuseConfidenceScore,
+            totalReports: abuse.totalReports,
+            country: abuse.country,
+            isp: abuse.isp,
+          };
+        }
+      } catch { /* api key not configured */ }
+    }
+
+    // DNS lookup for domains
+    if (ioc.type === 'domain') {
+      try {
+        const dns = await reconService.dnsLookup(ioc.value);
+        if (dns?.result) {
+          const r = dns.result as any;
+          enrichment.dns = {
+            a: r.a || [],
+            mx: (r.mx || []).map((m: any) => (typeof m === 'object' ? m.exchange : m)),
+            txt: r.txt || [],
+          };
+        }
+      } catch { /* dns failed */ }
+    }
+
+    // VirusTotal for IP/domain/hash/URL (silently skipped if no API key)
+    if (['ip', 'domain', 'hash', 'url'].includes(ioc.type)) {
+      try {
+        let vtResult: any = null;
+        if (ioc.type === 'ip') vtResult = await virusTotalService.lookupIP(ioc.value);
+        else if (ioc.type === 'domain') vtResult = await virusTotalService.lookupDomain(ioc.value);
+        else if (ioc.type === 'hash') vtResult = await virusTotalService.lookupHash(ioc.value);
+        else if (ioc.type === 'url') vtResult = await virusTotalService.lookupURL(ioc.value);
+
+        if (vtResult) {
+          const malicious = Number(vtResult.malicious || 0);
+          const suspicious = Number(vtResult.suspicious || 0);
+          const harmless = Number(vtResult.harmless || 0);
+          const undetected = Number(vtResult.undetected || 0);
+          const total = Math.max(1, malicious + suspicious + harmless + undetected);
+          enrichment.virusTotal = {
+            detectionRatio: `${malicious}/${total}`,
+            positives: malicious,
+            total,
+            vendors: [],
+          };
+        }
+      } catch { /* vt api key not configured or rate limited */ }
+    }
+
+    return enrichment;
+  }
+
   async getAnomalies() {
     const result = await db.execute(sql`
       SELECT date_trunc('hour', created_at) AS hour, count(*)::int AS count
@@ -394,8 +482,8 @@ export class IOCService {
     `);
 
     const rows = (result as any).rows as Array<{ hour: unknown; count: number }>;
-    if (!rows || rows.length < 4) {
-      return { anomalies: [], baseline: 0, stddev: 0, windowHours: rows?.length ?? 0, latestAnomaly: null };
+    if (!rows || rows.length === 0) {
+      return { anomalies: [], baseline: 0, stddev: 0, windowHours: 0, latestAnomaly: null };
     }
 
     const counts = rows.map((r) => Number(r.count));

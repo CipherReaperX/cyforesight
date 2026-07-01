@@ -153,17 +153,12 @@ export function startScheduler() {
   logger.info('📅 Threat Scoring: Every 30 minutes');
   logger.info('📅 Threat Hunting Automation: Every 10 minutes');
 
-  // Auto-resume: register feed cadence + queue catch-up syncs for due feeds
+  // Auto-resume: register feed cadence + queue catch-up syncs for due feeds.
+  // This replaces the old SCHEDULER_RUN_ON_START fire — registerAndCatchUpFeeds
+  // already queues every feed that missed its window, so firing all feeds again
+  // would double-import IOCs.
   void registerAndCatchUpFeeds();
-
-  const runOnStartup = (process.env.SCHEDULER_RUN_ON_START || 'false').toLowerCase() === 'true';
-  if (runOnStartup) {
-    logger.info('🚀 Triggering initial jobs...');
-    feedFetchJob.fireOnTick();
-    enrichmentJob.fireOnTick();
-  } else {
-    logger.info('⏭️  Initial scheduler run disabled (set SCHEDULER_RUN_ON_START=true to enable)');
-  }
+  enrichmentJob.fireOnTick();
 }
 
 export function stopScheduler() {

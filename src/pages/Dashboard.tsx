@@ -75,6 +75,22 @@ export default function Dashboard() {
   const { data: overview, isLoading, isFetching } = useDashboardOverview(dayRange, 10)
   const { data: geoCountries = [], isLoading: geoLoading } = useGeoThreats()
 
+  // Stagger chart mounting across 3 consecutive animation frames.
+  // Each chart mounts in its own frame so layout measurements never pile up in
+  // the same paint cycle, eliminating forced-reflow violations on initial render.
+  const [chartsReady, setChartsReady] = useState(0)
+  useEffect(() => {
+    let r1: number, r2: number, r3: number
+    r1 = requestAnimationFrame(() => {
+      setChartsReady(1)
+      r2 = requestAnimationFrame(() => {
+        setChartsReady(2)
+        r3 = requestAnimationFrame(() => setChartsReady(3))
+      })
+    })
+    return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); cancelAnimationFrame(r3) }
+  }, [])
+
   // All real-time state comes directly from SocketProvider context — no local subscriptions
   const { status: socketStatus, pulse, lastIocFlash: flashCount } = useSocketCtx()
 
@@ -163,22 +179,35 @@ export default function Dashboard() {
     }
   }, [queryClient])
 
-  const handleInvestigate = useCallback((threat: any) => {
-    toast.info(`Opening investigation for: ${threat.name}`)
-  }, [])
+  const handleInvestigate = useCallback(async (threat: any) => {
+    try {
+      await api.post('/incidents', {
+        name: `Investigation: ${threat.name}`,
+        severity: threat.severity || 'medium',
+        description: `Auto-created from dashboard threat detection. IOC count: ${threat.iocCount || 0}. Confidence: ${threat.confidence || 0}%.`,
+        iocIds: threat.id ? [threat.id] : [],
+      })
+      toast.success(`Incident created for: ${threat.name}`)
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      navigate('/incidents')
+    } catch {
+      toast.error('Failed to create incident')
+    }
+  }, [queryClient, navigate])
 
   const handleBlock = useCallback(async (threat: any) => {
     try {
-      await api.post(`/iocs/block`, { value: threat.name, id: threat.id })
+      await api.put(`/iocs/${threat.id}`, { status: 'blocked' })
       toast.success(`Blocked: ${threat.name}`)
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     } catch {
       toast.error('Block action unavailable — mark manually in IOC view')
     }
-  }, [])
+  }, [queryClient])
 
   const handleDismiss = useCallback(async (threat: any) => {
     try {
-      await api.patch(`/threats/${threat.id}`, { status: 'dismissed' })
+      await api.put(`/iocs/${threat.id}`, { status: 'archived' })
       toast.success('Threat dismissed')
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     } catch {
@@ -399,7 +428,7 @@ export default function Dashboard() {
             <CardTitle>Threat Activity Trend ({dayRange}d)</CardTitle>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {isLoading || chartsReady < 1 ? (
               <ChartSkeleton />
             ) : trendData.length === 0 ? (
               <div className="flex h-[300px] items-center justify-center text-slate-500 text-sm">
@@ -429,7 +458,7 @@ export default function Dashboard() {
             <CardTitle>IOC Type Distribution</CardTitle>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {isLoading || chartsReady < 2 ? (
               <ChartSkeleton />
             ) : distribution.length === 0 ? (
               <div className="flex h-[300px] items-center justify-center text-slate-500 text-sm">No IOCs found</div>
@@ -464,7 +493,7 @@ export default function Dashboard() {
             <CardTitle>Threat Pressure Index</CardTitle>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {isLoading || chartsReady < 3 ? (
               <ChartSkeleton />
             ) : pressureData.length === 0 ? (
               <div className="flex h-[300px] items-center justify-center text-slate-500 text-sm">

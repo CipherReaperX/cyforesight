@@ -24,6 +24,17 @@ export class AuthController {
     }
   }
 
+  async refresh(req: AuthRequest, res: Response) {
+    try {
+      const { refreshToken } = req.body;
+      if (!refreshToken) return sendError(res, 'refreshToken is required', 400);
+      const result = await authService.refreshAccessToken(refreshToken);
+      sendSuccess(res, result, 'Token refreshed');
+    } catch (error: any) {
+      sendError(res, error.message, 401);
+    }
+  }
+
   async logout(req: AuthRequest, res: Response) {
     try {
       // TODO: Invalidate refresh token

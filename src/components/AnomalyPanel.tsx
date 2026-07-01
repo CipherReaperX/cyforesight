@@ -61,6 +61,13 @@ export default function AnomalyPanel() {
           </div>
         </div>
 
+        {windowHours > 0 && windowHours < 4 && (
+          <div className="flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-800/40 px-4 py-2 text-xs text-slate-500">
+            <Info className="h-3 w-3 shrink-0" />
+            <span>Only {windowHours}h of data so far — anomaly scoring becomes more reliable after 4+ hours of ingestion.</span>
+          </div>
+        )}
+
         {latestAnomaly ? (
           <div className="rounded-lg border border-orange-500/50 bg-orange-900/20 p-4">
             <div className="flex items-start justify-between gap-4">
@@ -85,11 +92,11 @@ export default function AnomalyPanel() {
               </p>
             </div>
           </div>
-        ) : windowHours < 4 ? (
+        ) : windowHours === 0 ? (
           <div className="flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-800/40 px-4 py-3">
             <Info className="h-4 w-4 shrink-0 text-slate-400" />
             <p className="text-sm text-slate-400">
-              Insufficient data ({windowHours}h). Ingest at least 4 hours of IOCs to enable anomaly detection.
+              No IOC ingestion data yet. Sync a threat feed to enable anomaly detection.
             </p>
           </div>
         ) : (

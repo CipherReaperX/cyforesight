@@ -85,7 +85,7 @@ export function initSocketIO(httpServer: HTTPServer): SocketIOServer {
         .split(',').map(o => o.trim()),
       credentials: true,
     },
-    transports: ['websocket', 'polling'],
+    transports: ['websocket'],
     pingTimeout: 20000,
     pingInterval: 25000,
   });

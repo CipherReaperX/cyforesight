@@ -362,8 +362,8 @@ export default function AssetInventory() {
                           : <span className="text-slate-500">0</span>}
                       </TableCell>
                       <TableCell>
-                        {(asset.unpatchedCVEs || 0) > 0
-                          ? <Badge variant="warning">{asset.unpatchedCVEs}</Badge>
+                        {(asset.unpatchedCves || 0) > 0
+                          ? <Badge variant="warning">{asset.unpatchedCves}</Badge>
                           : <span className="text-slate-500">0</span>}
                       </TableCell>
                       <TableCell>
@@ -463,7 +463,7 @@ export default function AssetInventory() {
                             <span className="text-slate-400">Threats / CVEs</span>
                             <div className="flex gap-1">
                               <Badge variant={(asset.activeThreats || 0) > 0 ? 'danger' : 'default'}>{asset.activeThreats || 0}</Badge>
-                              <Badge variant={(asset.unpatchedCVEs || 0) > 0 ? 'warning' : 'default'}>{asset.unpatchedCVEs || 0}</Badge>
+                              <Badge variant={(asset.unpatchedCves || 0) > 0 ? 'warning' : 'default'}>{asset.unpatchedCves || 0}</Badge>
                             </div>
                           </div>
                           <div className="flex items-center justify-between text-sm">
