@@ -17,7 +17,7 @@
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)
-![Vite](https://img.shields.io/badge/Vite-5.x-646CFF?style=for-the-badge&logo=vite&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-6.x-646CFF?style=for-the-badge&logo=vite&logoColor=white)
 ![Express](https://img.shields.io/badge/Express-4.x-000000?style=for-the-badge&logo=express&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=for-the-badge&logo=redis&logoColor=white)
@@ -85,7 +85,7 @@
 
 **Frontend**
 - React 18 with `startTransition` for non-blocking socket updates
-- Vite 5 with HMR and path aliasing (`@/`)
+- Vite 6 with HMR and path aliasing (`@/`)
 - TailwindCSS — dark theme with custom slate/cyan palette
 - Recharts — line, area, bar, pie charts
 - React Query (TanStack) — server state, cache invalidation
