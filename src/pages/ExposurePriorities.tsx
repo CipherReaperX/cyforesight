@@ -167,7 +167,7 @@ export default function ExposurePriorities() {
               <div className="mt-4 flex justify-center gap-3">
                 <Button
                   variant="primary"
-                  onClick={() => bootstrap.mutateAsync()}
+                  onClick={() => bootstrap.mutateAsync().catch(() => {})}
                   disabled={bootstrap.isPending}
                 >
                   <Activity className={`mr-2 h-4 w-4 ${bootstrap.isPending ? 'animate-pulse' : ''}`} />

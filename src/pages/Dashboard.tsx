@@ -139,7 +139,7 @@ export default function Dashboard() {
       toast.success('Dashboard refreshed')
     } catch {
       await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      toast.success('Dashboard refreshed')
+      toast.warning('Partial refresh — server cache clear failed, local data reloaded')
     } finally {
       setIsRefreshing(false)
     }
@@ -195,25 +195,13 @@ export default function Dashboard() {
     }
   }, [queryClient, navigate])
 
-  const handleBlock = useCallback(async (threat: any) => {
-    try {
-      await api.put(`/iocs/${threat.id}`, { status: 'blocked' })
-      toast.success(`Blocked: ${threat.name}`)
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-    } catch {
-      toast.error('Block action unavailable — mark manually in IOC view')
-    }
-  }, [queryClient])
+  const handleBlock = useCallback((_threat: any) => {
+    toast.info('Block action — mark the IOC as blocked in IOC Management')
+  }, [])
 
-  const handleDismiss = useCallback(async (threat: any) => {
-    try {
-      await api.put(`/iocs/${threat.id}`, { status: 'archived' })
-      toast.success('Threat dismissed')
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-    } catch {
-      toast.info('Dismissed (local view only)')
-    }
-  }, [queryClient])
+  const handleDismiss = useCallback((_threat: any) => {
+    toast.info('Dismissed (local view only)')
+  }, [])
 
   const tooltipStyle = { backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#e2e8f0' }
 
@@ -744,7 +732,7 @@ export default function Dashboard() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Top MITRE ATT&CK Techniques</CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => window.location.href = '/mitre'}>
+              <Button variant="ghost" size="sm" onClick={() => navigate('/mitre')}>
                 View Matrix
               </Button>
             </div>

@@ -177,10 +177,10 @@ export default function AssetInventory() {
           <p className="text-slate-400">{assetTotal} assets monitored</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="primary" onClick={() => bootstrapEnterprise.mutateAsync().then(() => refetch())} disabled={bootstrapEnterprise.isPending}>
+          <Button variant="primary" onClick={() => bootstrapEnterprise.mutateAsync().then(() => refetch()).catch(() => {})} disabled={bootstrapEnterprise.isPending}>
             {bootstrapEnterprise.isPending ? 'Loading…' : 'Load Enterprise Blueprint'}
           </Button>
-          <Button variant="primary" onClick={() => mapIOCs.mutateAsync(40).then(() => refetch())} disabled={mapIOCs.isPending}>
+          <Button variant="primary" onClick={() => mapIOCs.mutateAsync(40).then(() => refetch()).catch(() => {})} disabled={mapIOCs.isPending}>
             <Link2 className="mr-2 h-4 w-4" />
             {mapIOCs.isPending ? 'Mapping…' : 'Map IOCs'}
           </Button>

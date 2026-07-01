@@ -1,20 +1,23 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { Search, Plus, Download, Upload, Eye, MoreVertical, Copy, RefreshCw } from 'lucide-react'
+import { Search, Plus, Download, Upload, Eye, MoreVertical, Copy, RefreshCw, X, Trash2 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { Progress } from '@/components/ui/Progress'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
-import { useBootstrapDiverseIOCs, useFreshIOCs, useIOCs, useSyncAllFeedsForIOCs } from '@/hooks/useIOCs'
+import { useBootstrapDiverseIOCs, useCreateIOC, useDeleteIOC, useFreshIOCs, useIOCs, useSyncAllFeedsForIOCs } from '@/hooks/useIOCs'
 import { formatNumber, formatRelativeTime, truncate } from '@/lib/utils'
 import { Link } from 'react-router-dom'
 import apiClient from '@/lib/api'
 import { useIOCDistribution } from '@/hooks/useDashboard'
 
 type BadgeVariant = 'default' | 'critical' | 'high' | 'medium' | 'low' | 'info' | 'success' | 'warning' | 'danger'
+
+const IOC_TYPES = ['ip', 'domain', 'hash', 'url', 'email', 'registry', 'mutex', 'user-agent'] as const
+const SEVERITIES = ['critical', 'high', 'medium', 'low', 'info'] as const
 
 export default function IOCManagement() {
   const [searchParams] = useSearchParams()
@@ -48,15 +51,43 @@ export default function IOCManagement() {
     const id = setTimeout(() => setSearch(searchInput), 350)
     return () => clearTimeout(id)
   }, [searchInput])
+
   const [csvFile, setCsvFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
 
-  // Safe default with multiple fallback levels
+  // Add IOC modal state
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [form, setForm] = useState({
+    value: '',
+    type: 'ip' as typeof IOC_TYPES[number],
+    severity: 'medium' as typeof SEVERITIES[number],
+    confidence: 50,
+    tags: '',
+    description: '',
+  })
+
+  // MoreVertical dropdown state — stores the ioc id whose menu is open
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null)
+      }
+    }
+    if (openMenuId) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [openMenuId])
+
   const { data, isLoading, refetch } = useIOCs({ ...filters, search: search || undefined })
   const { data: freshData, refetch: refetchFresh } = useFreshIOCs(24, 100)
   const { data: distribution = [] } = useIOCDistribution()
   const syncAllFeeds = useSyncAllFeedsForIOCs()
   const bootstrapDiverse = useBootstrapDiverseIOCs()
+  const createIOC = useCreateIOC()
+  const deleteIOC = useDeleteIOC()
+
   const iocs = data || { items: [], total: 0 }
   const iocItems = iocs?.items || []
   const iocTotal = iocs?.total || 0
@@ -65,12 +96,8 @@ export default function IOCManagement() {
   const mapSeverityToBadge = (severity: string): BadgeVariant =>
     severity === 'info' ? 'default' : (severity as BadgeVariant)
 
-  // IOC list auto-refreshes via socket feed:synced / ioc:new events (SocketProvider).
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) {
-      setCsvFile(e.target.files[0])
-    }
+    if (e.target.files?.[0]) setCsvFile(e.target.files[0])
   }
 
   const handleUploadCsv = async () => {
@@ -79,27 +106,33 @@ export default function IOCManagement() {
     try {
       const formData = new FormData()
       formData.append('file', csvFile)
-
       await apiClient.post('/iocs/upload-csv', formData)
-
-      alert('IOCs uploaded successfully!')
+      toast.success('IOCs uploaded successfully!')
       setCsvFile(null)
-      if (refetch) refetch() // Refresh the IOC list
+      refetch()
     } catch (error: any) {
-      alert(`Error uploading CSV: ${error.message}`)
+      toast.error(`Error uploading CSV: ${error?.response?.data?.message || error.message}`)
     } finally {
       setUploading(false)
     }
   }
 
   const handleFetchFreshIOCs = async () => {
-    await syncAllFeeds.mutateAsync()
-    await Promise.all([refetch(), refetchFresh()])
+    try {
+      await syncAllFeeds.mutateAsync()
+      await Promise.all([refetch(), refetchFresh()])
+    } catch {
+      // onError in the hook already shows the toast
+    }
   }
 
   const handleLoadDiverseIOCs = async () => {
-    await bootstrapDiverse.mutateAsync(160)
-    await Promise.all([refetch(), refetchFresh()])
+    try {
+      await bootstrapDiverse.mutateAsync(160)
+      await Promise.all([refetch(), refetchFresh()])
+    } catch {
+      // onError in the hook already shows the toast
+    }
   }
 
   const handleExport = async (format: 'csv' | 'json') => {
@@ -119,6 +152,25 @@ export default function IOCManagement() {
     } catch {
       toast.error('Export failed')
     }
+  }
+
+  const handleAddIOC = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await createIOC.mutateAsync({
+      value: form.value.trim(),
+      type: form.type,
+      severity: form.severity,
+      confidence: form.confidence,
+      tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      description: form.description || undefined,
+    } as any)
+    setShowAddModal(false)
+    setForm({ value: '', type: 'ip', severity: 'medium', confidence: 50, tags: '', description: '' })
+  }
+
+  const handleDelete = async (id: string) => {
+    setOpenMenuId(null)
+    await deleteIOC.mutateAsync(id)
   }
 
   return (
@@ -162,7 +214,7 @@ export default function IOCManagement() {
             <Download className="mr-2 h-4 w-4" />
             Export JSON
           </Button>
-          <Button variant="primary">
+          <Button variant="primary" onClick={() => setShowAddModal(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Add IOC
           </Button>
@@ -200,14 +252,7 @@ export default function IOCManagement() {
             className="h-10 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200"
           >
             <option value="">All Types</option>
-            <option value="ip">IP</option>
-            <option value="domain">Domain</option>
-            <option value="hash">Hash</option>
-            <option value="url">URL</option>
-            <option value="email">Email</option>
-            <option value="registry">Registry</option>
-            <option value="mutex">Mutex</option>
-            <option value="user-agent">User Agent</option>
+            {IOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
           <select
             value={filters.severity}
@@ -215,11 +260,7 @@ export default function IOCManagement() {
             className="h-10 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200"
           >
             <option value="">All Severity</option>
-            <option value="critical">Critical</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-            <option value="info">Info</option>
+            {SEVERITIES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
           </select>
           <select
             value={filters.status}
@@ -327,15 +368,42 @@ export default function IOCManagement() {
                     <Badge variant="warning">{ioc.affectedAssets || 0}</Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex space-x-2">
+                    <div className="flex items-center space-x-2">
                       <Link to={`/iocs/${ioc.id}`}>
                         <Button size="sm" variant="ghost">
                           <Eye className="h-4 w-4" />
                         </Button>
                       </Link>
-                      <Button size="sm" variant="ghost">
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
+                      <div className="relative">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setOpenMenuId(openMenuId === ioc.id ? null : ioc.id)}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                        {openMenuId === ioc.id && (
+                          <div
+                            ref={menuRef}
+                            className="absolute right-0 top-8 z-50 w-36 rounded-md border border-slate-700 bg-slate-800 shadow-lg"
+                          >
+                            <Link
+                              to={`/iocs/${ioc.id}`}
+                              className="flex items-center gap-2 px-3 py-2 text-sm text-slate-200 hover:bg-slate-700"
+                              onClick={() => setOpenMenuId(null)}
+                            >
+                              <Eye className="h-4 w-4" /> View Details
+                            </Link>
+                            <button
+                              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-slate-700"
+                              onClick={() => handleDelete(ioc.id)}
+                              disabled={deleteIOC.isPending}
+                            >
+                              <Trash2 className="h-4 w-4" /> Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -369,6 +437,94 @@ export default function IOCManagement() {
           </div>
         </div>
       </Card>
+
+      {/* Add IOC Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-800 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-700 px-6 py-4">
+              <h2 className="text-lg font-semibold text-slate-100">Add New IOC</h2>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-200">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleAddIOC} className="space-y-4 px-6 py-5">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-300">IOC Value *</label>
+                <Input
+                  placeholder="e.g. 192.168.1.1, malicious.com, abc123..."
+                  value={form.value}
+                  onChange={e => setForm(f => ({ ...f, value: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-300">Type *</label>
+                  <select
+                    value={form.type}
+                    onChange={e => setForm(f => ({ ...f, type: e.target.value as typeof IOC_TYPES[number] }))}
+                    className="w-full h-10 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200"
+                    required
+                  >
+                    {IOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-300">Severity *</label>
+                  <select
+                    value={form.severity}
+                    onChange={e => setForm(f => ({ ...f, severity: e.target.value as typeof SEVERITIES[number] }))}
+                    className="w-full h-10 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-200"
+                    required
+                  >
+                    {SEVERITIES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-300">
+                  Confidence: {form.confidence}%
+                </label>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={form.confidence}
+                  onChange={e => setForm(f => ({ ...f, confidence: Number(e.target.value) }))}
+                  className="w-full accent-cyan-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-300">Tags (comma-separated)</label>
+                <Input
+                  placeholder="e.g. ransomware, apt28, c2"
+                  value={form.tags}
+                  onChange={e => setForm(f => ({ ...f, tags: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-300">Description</label>
+                <textarea
+                  rows={3}
+                  placeholder="Optional description..."
+                  value={form.description}
+                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button type="button" variant="outline" onClick={() => setShowAddModal(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" disabled={createIOC.isPending}>
+                  {createIOC.isPending ? 'Creating...' : 'Create IOC'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
