@@ -351,7 +351,11 @@ function SecurityPanel() {
       await api.post('/auth/change-password', { currentPassword: pwd.current, newPassword: pwd.next })
     },
     onSuccess: () => { toast.success('Password changed'); setPwd({ current: '', next: '', confirm: '' }) },
-    onError: (e: any) => toast.error(e?.response?.data?.message || 'Failed to change password'),
+    onError: (e: any) => {
+      const errors = e?.response?.data?.errors
+      const firstMsg = Array.isArray(errors) && errors[0]?.message
+      toast.error(firstMsg || e?.response?.data?.message || 'Failed to change password')
+    },
   })
 
   const { data: audit = [] } = useQuery<any[]>({

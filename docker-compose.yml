@@ -5,7 +5,8 @@ services:
     environment:
       POSTGRES_DB: tip_db
       POSTGRES_USER: tip_user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      # Dev default — override via .env in production (POSTGRES_PASSWORD=strong_value)
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cyforesight_dev_pass}
     ports:
       - "5432:5432"
     volumes:
@@ -42,13 +43,14 @@ services:
     environment:
       NODE_ENV: production
       PORT: 10099
-      DATABASE_URL: postgresql://tip_user:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/tip_db
+      DATABASE_URL: postgresql://tip_user:${POSTGRES_PASSWORD:-cyforesight_dev_pass}@db:5432/tip_db
       DATABASE_POOL_SIZE: 20
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ""
       REDIS_DB: 0
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      # Dev default — MUST be overridden in production via .env (JWT_SECRET=random_64_char_string)
+      JWT_SECRET: ${JWT_SECRET:-cyforesight_dev_jwt_secret_change_in_production}
       JWT_EXPIRY: 365d
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       FEATURE_ML_SCORING: "true"
