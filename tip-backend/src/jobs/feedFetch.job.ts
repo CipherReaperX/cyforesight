@@ -180,7 +180,7 @@ export const feedFetchWorker = new Worker(
       await db.update(threatFeeds)
         .set({ status: 'error', errorMessage: error.message || 'Feed fetch failed', updatedAt: new Date() })
         .where(eq(threatFeeds.id, feedId))
-        .catch(() => {/* ignore */});
+        .catch((dbErr: any) => logger.error('Failed to update feed error status:', dbErr));
       emit('feed:synced', { feedId, feedName, status: 'error', iocsInserted: 0, lastSyncAt: new Date().toISOString(), error: error.message });
       throw error;
     }

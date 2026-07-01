@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useRef, ReactNode, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState, useRef, ReactNode, useCallback, startTransition } from 'react'
 import { io, Socket } from 'socket.io-client'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -105,7 +105,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
     const s = io(BACKEND_URL, {
       auth: { token },
-      transports: ['websocket', 'polling'],
+      transports: ['websocket'],
       reconnectionDelay: 1000,
       reconnectionDelayMax: 30000,
       reconnectionAttempts: Infinity,
@@ -128,58 +128,74 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       setCtxValue(v => ({ ...v, status: 'disconnected' }))
     })
 
+    // Pulse is purely cosmetic data — mark as non-urgent so React can yield to
+    // user interactions instead of blocking the WebSocket message handler thread.
     s.on('dashboard:pulse', (data: PulseData) => {
-      setCtxValue(v => ({ ...v, pulse: data, status: 'connected' }))
+      startTransition(() => {
+        setCtxValue(v => ({ ...v, pulse: data, status: 'connected' }))
+      })
     })
 
     s.on('ioc:new', (data: { feedId: string; feedName: string; count: number }) => {
-      setCtxValue(v => ({ ...v, lastIocFlash: v.lastIocFlash + 1 }))
-      queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard', 'geo-threats'] })
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
-      queryClient.invalidateQueries({ queryKey: ['mitre', 'coverage'] })
       toast.info(`${data.feedName}: +${data.count} new IOCs`, { duration: 3000 })
+      startTransition(() => {
+        setCtxValue(v => ({ ...v, lastIocFlash: v.lastIocFlash + 1 }))
+        queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview'] })
+        queryClient.invalidateQueries({ queryKey: ['dashboard', 'geo-threats'] })
+        queryClient.invalidateQueries({ queryKey: ['iocs'] })
+        queryClient.invalidateQueries({ queryKey: ['assets'] })
+        queryClient.invalidateQueries({ queryKey: ['mitre', 'coverage'] })
+      })
     })
 
     s.on('feed:synced', () => {
-      queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview'] })
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
-      queryClient.invalidateQueries({ queryKey: ['threat-feeds'] })
-      queryClient.invalidateQueries({ queryKey: ['iocs', 'anomalies'] })
-      queryClient.invalidateQueries({ queryKey: ['mitre', 'coverage'] })
-      queryClient.invalidateQueries({ queryKey: ['mitre', 'asset-correlation'] })
+      startTransition(() => {
+        queryClient.invalidateQueries({ queryKey: ['dashboard', 'overview'] })
+        queryClient.invalidateQueries({ queryKey: ['iocs'] })
+        queryClient.invalidateQueries({ queryKey: ['assets'] })
+        queryClient.invalidateQueries({ queryKey: ['threat-feeds'] })
+        queryClient.invalidateQueries({ queryKey: ['iocs', 'anomalies'] })
+        queryClient.invalidateQueries({ queryKey: ['mitre', 'coverage'] })
+        queryClient.invalidateQueries({ queryKey: ['mitre', 'asset-correlation'] })
+      })
     })
 
     s.on('incident:created', () => {
-      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      startTransition(() => { queryClient.invalidateQueries({ queryKey: ['incidents'] }) })
     })
 
     s.on('incident:updated', (data: { id: string }) => {
-      queryClient.invalidateQueries({ queryKey: ['incidents'] })
-      if (data?.id) queryClient.invalidateQueries({ queryKey: ['incidents', data.id] })
+      startTransition(() => {
+        queryClient.invalidateQueries({ queryKey: ['incidents'] })
+        if (data?.id) queryClient.invalidateQueries({ queryKey: ['incidents', data.id] })
+      })
     })
 
     s.on('incident:deleted', () => {
-      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      startTransition(() => { queryClient.invalidateQueries({ queryKey: ['incidents'] }) })
     })
 
     s.on('dashboard:refresh', () => {
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      startTransition(() => { queryClient.invalidateQueries({ queryKey: ['dashboard'] }) })
     })
 
     s.on('integration:tested', () => {
-      queryClient.invalidateQueries({ queryKey: ['integrations'] })
+      startTransition(() => { queryClient.invalidateQueries({ queryKey: ['integrations'] }) })
     })
 
     // Single source of truth for notification state — handled here, not in useNotifications
     s.on('notification:init', (payload: { items: AppNotification[]; unread: number }) => {
-      setCtxValue(v => ({ ...v, notifications: payload.items, unreadCount: payload.unread }))
+      startTransition(() => {
+        setCtxValue(v => ({ ...v, notifications: payload.items, unreadCount: payload.unread }))
+      })
     })
 
     s.on('notification:new', (n: AppNotification) => {
-      setCtxValue(v => {
-        const updated = [n, ...v.notifications].slice(0, 100)
-        return { ...v, notifications: updated, unreadCount: updated.filter(x => !x.read).length }
+      startTransition(() => {
+        setCtxValue(v => {
+          const updated = [n, ...v.notifications].slice(0, 100)
+          return { ...v, notifications: updated, unreadCount: updated.filter(x => !x.read).length }
+        })
       })
     })
 

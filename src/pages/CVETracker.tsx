@@ -85,13 +85,8 @@ export default function CVETracker() {
   const handleExport = async () => {
     setExportLoading(true)
     try {
-      const token = localStorage.getItem('token')
-      const resp = await fetch('/api/cves/export', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!resp.ok) throw new Error('Export failed')
-      const blob = await resp.blob()
-      const url = URL.createObjectURL(blob)
+      const response = await api.get('/cves/export', { responseType: 'blob' })
+      const url = URL.createObjectURL(response.data)
       const a = document.createElement('a')
       a.href = url
       a.download = `cve-export-${new Date().toISOString().split('T')[0]}.csv`

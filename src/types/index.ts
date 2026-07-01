@@ -119,7 +119,7 @@ export interface Asset {
   riskScore: number
   criticality: number
   activeThreats: number
-  unpatchedCVEs: number
+  unpatchedCves: number
   status: 'online' | 'offline' | 'unknown'
   tags: string[]
   metadata?: Record<string, unknown>

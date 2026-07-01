@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Search, Play, Save, Download, History, Bot } from 'lucide-react'
+import { useMemo, useState, useCallback } from 'react'
+import { Search, Play, Save, Download, Bot } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -38,6 +38,25 @@ export default function ThreatHunting() {
     setLastRun(result)
   }
 
+  const handleExportResults = useCallback(() => {
+    if (!latestRun) return
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      query: latestRun.query,
+      dataSource: latestRun.dataSource,
+      totalMatches: latestRun.totalMatches,
+      summary: latestRun.summary,
+      findings: latestRun.findings || [],
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `hunt-results-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [latestRun])
+
   const handleSave = async () => {
     await saveMutation.mutateAsync({
       name: `Hunt - ${new Date().toLocaleString()}`,
@@ -61,7 +80,12 @@ export default function ThreatHunting() {
             <Bot className="mr-2 h-4 w-4" />
             {automationMutation.isPending ? 'Running...' : 'Run Automation'}
           </Button>
-          <Button variant="outline">
+          <Button
+            variant="outline"
+            onClick={handleExportResults}
+            disabled={!latestRun}
+            title={latestRun ? 'Download current results as JSON' : 'Run a query first'}
+          >
             <Download className="mr-2 h-4 w-4" />
             Export Results
           </Button>
@@ -72,10 +96,8 @@ export default function ThreatHunting() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Query Builder</CardTitle>
-            <div className="flex space-x-2">
-              <Button size="sm" variant="ghost">
-                KQL-Compatible
-              </Button>
+            <div className="flex items-center space-x-2">
+              <Badge variant="default">KQL-Compatible</Badge>
               <Button size="sm" variant="ghost" onClick={handleSave} disabled={saveMutation.isPending}>
                 <Save className="mr-2 h-4 w-4" />
                 Save Query

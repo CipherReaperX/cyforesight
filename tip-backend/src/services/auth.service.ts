@@ -185,6 +185,33 @@ export class AuthService {
     return rows;
   }
 
+  async refreshAccessToken(rawRefreshToken: string) {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error('JWT_SECRET not configured');
+
+    let decoded: any;
+    try {
+      decoded = jwt.verify(rawRefreshToken, secret) as any;
+    } catch {
+      throw new Error('Invalid or expired refresh token');
+    }
+
+    // Refresh tokens only carry userId (not username) – reject access tokens used here
+    if (!decoded.userId || decoded.username) throw new Error('Invalid token type');
+
+    const user = await db.query.users.findFirst({ where: eq(users.id, decoded.userId) });
+    if (!user || !user.isActive) throw new Error('User not found or disabled');
+
+    const jwtExpiry = (process.env.JWT_EXPIRY as jwt.SignOptions['expiresIn']) || '7d';
+    const token = jwt.sign(
+      { userId: user.id, username: user.username, email: user.email, role: user.role, permissions: user.permissions },
+      secret,
+      { expiresIn: jwtExpiry }
+    );
+
+    return { token, user: { id: user.id, username: user.username, email: user.email, role: user.role } };
+  }
+
   async changePassword(userId: string, currentPassword: string, newPassword: string) {
     const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
     if (!user) throw new Error('User not found');

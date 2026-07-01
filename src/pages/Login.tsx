@@ -21,10 +21,10 @@ const Login: React.FC = () => {
         password,
       });
 
-      const { token, user } = response.data.data;
+      const { token, refreshToken, user } = response.data.data;
 
-      // Store token and user info
       localStorage.setItem('token', token);
+      if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
       localStorage.setItem('user', JSON.stringify(user));
 
       // Set axios default header

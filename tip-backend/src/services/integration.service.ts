@@ -461,6 +461,7 @@ export async function dispatchEvent(eventType: EventPayload['type'], payload: Ev
       const config = row.config as IntegrationConfig;
       const triggers = config.triggers ?? [];
       if (!triggers.includes(eventType)) return;
+      if (!isIntegrationConfigured(row.type as IntegrationType, config)) return;
       try {
         switch (row.type) {
           case 'slack':   await runSlack(row.type === 'slack' ? config : config, payload);   break;

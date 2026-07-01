@@ -8,6 +8,7 @@ import { authLimiter } from '../middleware/ratelimit.middleware';
 const router = Router();
 
 router.post('/login', authLimiter, validate(loginSchema), authController.login);
+router.post('/refresh', authController.refresh);
 router.post('/logout', authenticate, authController.logout);
 router.get('/me', authenticate, authController.getMe);
 router.put('/change-password', authenticate, validate(changePasswordSchema), authController.changePassword);

@@ -77,7 +77,7 @@ export function useIOCEnrichment(id: string) {
     queryKey: ['iocs', id, 'enrichment'],
     queryFn: async () => {
       const { data } = await apiClient.get(`/iocs/${id}/enrichment`)
-      return data
+      return data.data
     },
     enabled: !!id,
   })
