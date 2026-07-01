@@ -116,18 +116,20 @@ const Login: React.FC = () => {
             </button>
           </form>
 
-          {/* Demo Credentials */}
-          <div className="mt-6 pt-6 border-t border-gray-700">
-            <p className="text-gray-400 text-sm text-center mb-2">Demo Credentials:</p>
-            <div className="bg-gray-900/50 rounded-lg p-3 space-y-1">
-              <p className="text-gray-300 text-sm">
-                <span className="font-semibold">Admin:</span> admin / admin123
-              </p>
-              <p className="text-gray-300 text-sm">
-                <span className="font-semibold">Analyst:</span> analyst / analyst123
-              </p>
+          {/* Demo credentials hint — only shown in local dev builds */}
+          {import.meta.env.DEV && (
+            <div className="mt-6 pt-6 border-t border-gray-700">
+              <p className="text-gray-400 text-sm text-center mb-2">Dev Credentials:</p>
+              <div className="bg-gray-900/50 rounded-lg p-3 space-y-1">
+                <p className="text-gray-300 text-sm">
+                  <span className="font-semibold">Admin:</span> admin / admin123
+                </p>
+                <p className="text-gray-300 text-sm">
+                  <span className="font-semibold">Analyst:</span> analyst / analyst123
+                </p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Footer */}

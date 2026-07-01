@@ -131,7 +131,16 @@ cd tip-backend && npm install
 
 ### 2 — Configure environment
 
-Create `tip-backend/.env`:
+> **Security note:** Never commit real `.env` files. Copy the examples and fill in your own values.
+
+**For Docker Compose** — create `.env` in the project root:
+
+```bash
+cp .env.example .env
+# Then edit .env with strong, unique values for POSTGRES_PASSWORD and JWT_SECRET
+```
+
+**For manual dev setup** — create `tip-backend/.env`:
 
 ```env
 DATABASE_URL=postgresql://user:password@localhost:5432/cyforesight

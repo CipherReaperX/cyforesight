@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: tip_db
       POSTGRES_USER: tip_user
-      POSTGRES_PASSWORD: password123
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
       - "5432:5432"
     volumes:
@@ -42,20 +42,20 @@ services:
     environment:
       NODE_ENV: production
       PORT: 10099
-      DATABASE_URL: postgresql://tip_user:password123@db:5432/tip_db
+      DATABASE_URL: postgresql://tip_user:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/tip_db
       DATABASE_POOL_SIZE: 20
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ""
       REDIS_DB: 0
-      JWT_SECRET: your_super_secret_jwt_key_change_this_min_32_chars
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       JWT_EXPIRY: 365d
-      CORS_ORIGIN: http://localhost:3000
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       FEATURE_ML_SCORING: "true"
       FEATURE_AUTO_ENRICHMENT: "true"
-      VIRUSTOTAL_API_KEY: ""
-      ABUSEIPDB_API_KEY: ""
-      SHODAN_API_KEY: ""
+      VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-}
+      ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
+      SHODAN_API_KEY: ${SHODAN_API_KEY:-}
     ports:
       - "10099:10099"
 
