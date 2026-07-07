@@ -57,7 +57,12 @@ export default function TopBar() {
     setIsRefreshing(false)
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await api.post('/auth/logout')
+    } catch {
+      // Best-effort server-side revocation; clear the local session regardless.
+    }
     localStorage.removeItem('token')
     localStorage.removeItem('refreshToken')
     localStorage.removeItem('user')

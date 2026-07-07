@@ -16,10 +16,15 @@ const BLOCKED_IP_RANGES = [
   /^192\.168\./,
   /^172\.(1[6-9]|2\d|3[01])\./,
   /^169\.254\./,
-  /^::1$/,
-  /^fc00:/i,
-  /^fe80:/i,
+  /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./,
   /^0\./,
+  /^::1$/,
+  /^f[cd][0-9a-f]{2}:/i,
+  /^fe80:/i,
+  /^::ffff:127\./i,
+  /^::ffff:10\./i,
+  /^::ffff:192\.168\./i,
+  /^::ffff:169\.254\./i,
 ];
 
 const BLOCKED_HOSTNAMES = new Set(['localhost', 'metadata.google.internal']);
@@ -47,6 +52,26 @@ function normalizeIP(input: string): string {
 
 function isIPAddress(input: string): boolean {
   return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(input.trim());
+}
+
+// Resolves `host` and returns an IP address that has been checked against
+// BLOCKED_IP_RANGES. Callers must connect to this resolved IP directly
+// (not re-resolve `host` at connect time) so a DNS answer can't change
+// between the check and the connection (DNS-rebinding SSRF).
+async function resolvePinnedIP(host: string): Promise<string> {
+  if (isIPAddress(host)) {
+    assertNotPrivate(host);
+    return host;
+  }
+
+  const v4 = await withTimeout(dns.resolve4(host), 5000, 'DNS resolution timed out').catch(() => [] as string[]);
+  const v6 = v4.length ? [] : await withTimeout(dns.resolve6(host), 5000, 'DNS resolution timed out').catch(() => [] as string[]);
+  const candidates = [...v4, ...v6];
+
+  if (!candidates.length) throw new Error(`Could not resolve host: ${host}`);
+  for (const ip of candidates) assertNotPrivate(ip);
+
+  return candidates[0];
 }
 
 export class ReconService {
@@ -114,12 +139,13 @@ export class ReconService {
     const host = normalizeDomain(query);
     if (!host) throw new Error('Domain is required for SSL lookup');
     assertNotPrivate(host);
+    const pinnedIP = await resolvePinnedIP(host);
 
     const result = await withTimeout(
       new Promise<any>((resolve, reject) => {
         const socket = tls.connect(
           {
-            host,
+            host: pinnedIP,
             port: 443,
             servername: host,
             rejectUnauthorized: false,

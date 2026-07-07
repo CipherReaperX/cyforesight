@@ -199,6 +199,24 @@ export class AuthService {
     // Refresh tokens only carry userId (not username) – reject access tokens used here
     if (!decoded.userId || decoded.username) throw new Error('Invalid token type');
 
+    // Refresh tokens are stored bcrypt-hashed (can't be looked up by equality),
+    // so pull the user's non-expired tokens and compare against each one. This
+    // is what actually makes logout/revocation take effect — without it, a
+    // deleted refresh token row would still mint new access tokens forever.
+    const storedTokens = await db.query.refreshTokens.findMany({
+      where: eq(refreshTokens.userId, decoded.userId),
+    });
+    const now = new Date();
+    let isValid = false;
+    for (const stored of storedTokens) {
+      if (new Date(stored.expiresAt) <= now) continue;
+      if (await bcrypt.compare(rawRefreshToken, stored.tokenHash)) {
+        isValid = true;
+        break;
+      }
+    }
+    if (!isValid) throw new Error('Refresh token has been revoked or is invalid');
+
     const user = await db.query.users.findFirst({ where: eq(users.id, decoded.userId) });
     if (!user || !user.isActive) throw new Error('User not found or disabled');
 
@@ -210,6 +228,12 @@ export class AuthService {
     );
 
     return { token, user: { id: user.id, username: user.username, email: user.email, role: user.role } };
+  }
+
+  async logout(userId: string) {
+    // Revoke every refresh token for this user, so a logged-out session can't
+    // silently mint new access tokens via /auth/refresh.
+    await db.delete(refreshTokens).where(eq(refreshTokens.userId, userId));
   }
 
   async changePassword(userId: string, currentPassword: string, newPassword: string) {

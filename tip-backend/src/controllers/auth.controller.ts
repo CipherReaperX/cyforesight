@@ -37,7 +37,10 @@ export class AuthController {
 
   async logout(req: AuthRequest, res: Response) {
     try {
-      // TODO: Invalidate refresh token
+      if (!req.user) {
+        return sendError(res, 'Unauthorized', 401);
+      }
+      await authService.logout(req.user.userId);
       sendSuccess(res, null, 'Logout successful');
     } catch (error: any) {
       sendError(res, error.message);

@@ -59,7 +59,12 @@ app.use(compression({
   },
 }));
 
-// HTTP request logging
+// HTTP request logging — redact query-string tokens (SSE auth passes JWTs via ?token=)
+// so live credentials never land in log files/log shipping.
+morgan.token('url', (req) => {
+  const url = (req as any).originalUrl || req.url || '';
+  return url.replace(/([?&]token=)[^&]*/gi, '$1[REDACTED]');
+});
 app.use(morgan('combined', { stream: { write: (msg) => logger.info(msg.trim()) } }));
 
 // Rate limiting

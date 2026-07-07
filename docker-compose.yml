@@ -51,7 +51,8 @@ services:
       REDIS_DB: 0
       # Dev default — MUST be overridden in production via .env (JWT_SECRET=random_64_char_string)
       JWT_SECRET: ${JWT_SECRET:-cyforesight_dev_jwt_secret_change_in_production}
-      JWT_EXPIRY: 365d
+      JWT_EXPIRY: ${JWT_EXPIRY:-1h}
+      REFRESH_TOKEN_EXPIRY: ${REFRESH_TOKEN_EXPIRY:-7d}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       FEATURE_ML_SCORING: "true"
       FEATURE_AUTO_ENRICHMENT: "true"
